@@ -1,4 +1,4 @@
-# ORAC: (Blake's 7) AI Voice-Chat & Terminal
+# ORAC: 'In-Universe" AI Voice & Terminal Bot
 
 ![ORAC Terminal Interface](resources/misc/orac-voice.png?text=ORAC+Terminal+UI)
 
