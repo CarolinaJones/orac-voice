@@ -96,7 +96,7 @@ printf("Status: %ld\\n", (long)status); }];
 [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:2.0]]; 
 return 0; }' > auth_check.m && gcc -framework AVFoundation -framework Foundation auth_check.m -o auth_check && ./auth_check
 ```
-You'll get an `authorization` pop-up to agree to and n MacOS settings (under Personal Voice), you should now see that Terminal is authorized to use it.
+You'll get an `authorization` pop-up to agree to and in MacOS settings, (under Personal Voice), you should now see that Terminal is authorized to use it.
 
 **6. ...and now to configure some variables & test:**
 
