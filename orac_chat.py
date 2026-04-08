@@ -42,7 +42,7 @@ voice_pitch = 80.0 	# Only works on SYNTH voices and not SIRI voices.
 U1 = 0.06 											# Teletype Speed
 U2 = 0.071 											# Teletype Uniformity
 
-TRANSCRIPT_DIR = '/Users/Caroline/Desktop/'			# A Directory called orac_transcripts will be created.
+TRANSCRIPT_DIR = ''			                        # A Directory called orac_transcripts will be created.
 TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added).
 
 YOUR_NAME = "Jenna" 								# USER Name and Identity
@@ -845,7 +845,7 @@ def shutdown_sequence(tts):
                         
                         if choice == 'y':
                             timestamp = time.strftime("%Y%m%d_%H%M%S")
-                            filename = os.path.join(TRANSCRIPT_DIR, f"orac_transcripts/{TR}_{timestamp}.txt")
+                            filename = os.path.join(TRANSCRIPT_DIR, f"transcripts/{TR}_{timestamp}.txt")
                             os.makedirs(os.path.dirname(filename), exist_ok=True)
                             with open(filename, "w", encoding="utf-8") as f:
                                 f.write(f"--- ORAC: SYSTEM TRANSCRIPT ---\n")
