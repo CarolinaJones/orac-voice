@@ -1,6 +1,9 @@
 # ORAC: 'In-Universe' AI Voice & Terminal Chat
 
-https://github.com/CarolinaJones/orac-voice/blob/65c115b4ff75222a79cae24b475111550f2d0571/resources/misc/orac_test.mp4
+
+https://github.com/user-attachments/assets/4facb2c3-2e08-482a-b78a-a84be58301b2
+
+
 
 **ORAC-Voice** is a fully autonomous, lore-accurate, voice-interactive AI, based on ORAC from the classic British Sci-Fi series *Blake's 7*.
 
