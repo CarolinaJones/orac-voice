@@ -36,8 +36,8 @@ from orac_personality import orac_personality
 #      USER CHANGEABLE VARIABLES     #
 #------------------------------------#
 
-VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI Voices.
-voice_pitch = 80.0 	# Only works on SYNTH voices and not SIRI voices.
+VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices.
+voice_pitch = 80.0 	# Only works on SYNTH voices and not SIRI/Personal voices.
 
 U1 = 0.06 											# Teletype Speed
 U2 = 0.071 											# Teletype Uniformity
