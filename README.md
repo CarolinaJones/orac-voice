@@ -72,13 +72,13 @@ cd orac-voice
 **IMPORTANT: Stay in this directory for entire installation.**
 
 ```bash
+# Download python 3.12 using Pyenv and set it active locally:
+pyenv install 3.12
+pyenv local 3.12
+
 # Create & Activate oral-venv
 python3 -m venv orac-venv
 source orac-venv/bin/activate
-
-# Download python 3.12 using Pyenv and activate it locally:
-pyenv install 3.12
-pyenv local 3.12
 ```
 **Ensure you are using pyenv to install and set Python 3.12. Do not use the default macOS system Python.**
 
