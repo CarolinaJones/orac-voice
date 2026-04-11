@@ -901,7 +901,7 @@ def speak_now(tts, teletype):
                     set_status(f"{FL}●{NOFL} HARDWARE DISCONNECTED: KEYBOARD ONLY", R)
                     update_header_only() # Instantly reflect the ERR in the stats bar
         
-        time.sleep(0.6)
+        time.sleep(0.7)
 
 def shutdown_sequence(tts):
     if state.is_shutdown.is_set(): return True

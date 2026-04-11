@@ -119,7 +119,7 @@ def orac_phonetics(text):
         r"\berror\b": "air-rah",
         r"\bfutility\b": "futilit'ee",
         r"\billogical\b": "ill'loji'kol",
-        r"\bI'll\b": "I will",
+        r"\bI've\b": "I have", r"\bI'll\b": "I will",
         r"\binquiry\b": "in-kwirey", r"\binquiries\b": "in-kwireys",
     }
    
