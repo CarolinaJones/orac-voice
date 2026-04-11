@@ -18,16 +18,22 @@ import tty
 import select
 import signal
 import textwrap 
+#import warnings
 
 from ollama import chat
 from AppKit import NSSpeechSynthesizer
+
 
 from orac_phonetics import orac_phonetics
 from orac_data_core import data_core
 from orac_personality import orac_personality
 
+# Attempt to resolve the "There appear to be 1 leaked semaphore..." warning caused by os._exit(0)
+from multiprocessing import resource_tracker
+#warnings.filterwarnings("ignore", category=UserWarning, module="resource_tracker")
+
 #---------------------------------------------------#
-#     ORAC-VOICE v1.0.1 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.0.2 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -53,7 +59,7 @@ TERMINAL_PROFILE = "Homebrew"						# Terminal Profile
 TERMINAL_FONT = "AdwaitaMono Nerd Font Mono"		# Font Name
 TERMINAL_FONT_SIZE = 17								# Font Size
 TERMINAL_COLS = 100									# Window Width
-TERMINAL_ROWS = 30									# Window Height
+TERMINAL_ROWS = 25									# Window Height
 
 # IT SHOULD NOT BE NECESSARY TO CHANGE ANYTHING BELOW THIS LINE #
 #--------------------------------------------------------------------------------------------------#
@@ -72,7 +78,6 @@ WHISPER_MODEL = './whisper/whisper-large-v3-turbo'	# WHISPER-MLX Model
 
 G, A, R, B = "\033[38;5;46m", "\033[38;5;214m", "\033[38;5;196m", "\033[1;37m"
 FL, NOFL, DIM, RESET = "\033[5m", "\033[25m", "\033[2m", "\033[0m"
-BR = "\x1b[1;31m" # Bold Bright Red (Not currently using)
 IT, NOIT = "\x1B[3m","\x1B[23m" # Italics on and off
 
 # Get the directory of the current script for absolute paths
@@ -112,6 +117,7 @@ class OracState:
         self.current_tokens = 0
         self.token_status = "NOMINAL"
         self.token_color = G  # Starts Green
+        self.noise_floor = 0.0 # Tracks room audio calibration dynamically
               
         self.is_speaking = threading.Event()
         self.is_processing = threading.Event() 
@@ -163,6 +169,14 @@ def cleanup_processes():
 
 atexit.register(cleanup_processes)
 
+def hard_shutdown():
+    # Tell the tracker to stop monitoring before crashing out
+    try:
+        resource_tracker._resource_tracker._stop()
+    except:
+        pass
+    os._exit(0)
+
 #-------------------------------------#
 # TERMINAL SETUP AND UI LAYOUT ENGINE #
 #-------------------------------------#
@@ -201,10 +215,8 @@ def update_token_health():
     total_chars = len(SYSTEM_INSTRUCTION)
     
     # Add current conversation history
-    #for msg in state.history:
-        #total_chars += len(msg['content'])
-    total_chars += sum(len(msg['content']) for msg in state.history) # TESTING ALT OPTION
-        
+    total_chars += sum(len(msg['content']) for msg in state.history) 
+    
     # Add buffer for injected reminders and system overhead
     total_chars += 350 
     
@@ -220,7 +232,7 @@ def update_token_health():
         state.token_color = A # Amber/Yellow
     else:
         state.token_status = "CRITICAL: SLIDING"
-        state.token_color = R # Red
+        state.token_color = R # Red 
 
 def get_ram_string():
     try:
@@ -230,7 +242,6 @@ def get_ram_string():
         return ""
 
 def set_status(text, color=G):
-    """Safely writes a message to the dedicated persistent Status Line (Row: rows-2)"""
     cols, rows = shutil.get_terminal_size()
     with state.terminal_lock:
         sys.stdout.write("\0337") 
@@ -259,8 +270,12 @@ def draw_ui(full_clear=False):
         sys.stdout.write(f"\033[1;1H\033[2K{tc}{TOP}{header_text}{RESET}")
         sys.stdout.write(f"\033[2;1H\033[2K{tc}{BOTTOM}{header_text}{RESET}")
         
-        # System Stats Bar (Left-Aligned on Row 3)
-        stats_text = f"TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {get_ram_string().strip()}"
+        # System Stats Bar (Tokens, Memory, Noise Floor - Left-Aligned on Row 3)
+        if state.mic_error: noise_str = "ERR"
+        elif state.noise_floor > 0: noise_str = f"{state.noise_floor:.0f}"
+        else: noise_str = "---"
+        
+        stats_text = f"TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {get_ram_string().strip()}   NOISE: {noise_str}"
         sys.stdout.write(f"\033[3;1H\033[2K{DIM}{stats_text}{RESET}") 
               
         # Bottom UI Elements
@@ -282,7 +297,6 @@ def update_header_only():
         TOP, BOTTOM = "\033#3", "\033#4"
         update_token_health() # Calculate before drawing
         
-        # Main Header (Double Height)
         header_text = f"ORAC: ALL SYSTEMS {state.token_status}"
         tc = state.token_color
         
@@ -290,8 +304,12 @@ def update_header_only():
         sys.stdout.write(f"\033[1;1H\033[2K{tc}{TOP}{header_text}{RESET}")
         sys.stdout.write(f"\033[2;1H\033[2K{tc}{BOTTOM}{header_text}{RESET}")
         
-        # System Stats Bar (Left-Aligned on Row 3)
-        stats_text = f"TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {get_ram_string().strip()}"
+        # System Stats Bar (Tokens, Memory, Noise Floor - Left-Aligned on Row 3)
+        if state.mic_error: noise_str = "ERR"
+        elif state.noise_floor > 0: noise_str = f"{state.noise_floor:.0f}"
+        else: noise_str = "---"
+        
+        stats_text = f"TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {get_ram_string().strip()}   NOISE: {noise_str}"
         sys.stdout.write(f"\033[3;1H\033[2K{DIM}{stats_text}{RESET}") 
         
         sys.stdout.write("\0338") 
@@ -307,7 +325,7 @@ def ui_refresh_worker():
                 redraw_scroll_region()
             else:
                 resume_live_view()   # Restore the chat history
-            render_input_box()       # Restore the typing prompt
+            render_input_box()       # Restore the typing prompt       
             
             # Exiting fullscreen pushes the native cursor to the absolute bottom row, 
             # breaking the teletype scroll region. Force the cursor back where it belongs.
@@ -382,7 +400,7 @@ def get_wrapped_history_lines(cols):
 def resume_live_view():
     state.scroll_offset = 0
     cols, rows = shutil.get_terminal_size()
-    visible_rows = rows - 8 # Adjusted for the top divider or blank line thingy
+    visible_rows = rows - 8 # Adjusted for the top divider or blank line thingy 
     
     lines = get_wrapped_history_lines(cols)
     display_lines = lines[-visible_rows:] if len(lines) > visible_rows else lines
@@ -405,7 +423,7 @@ def redraw_scroll_region():
         return
         
     cols, rows = shutil.get_terminal_size()
-    visible_rows = rows - 8 # Adjusted for the top divider (as above)
+    visible_rows = rows - 8 # Adjusted for the top divider (as above) 
     
     lines = get_wrapped_history_lines(cols)
     max_offset = max(0, len(lines) - visible_rows)
@@ -549,7 +567,7 @@ class MacTTS:
                             except Exception:
                                 pass
                             
-                            time.sleep(0.6) # Delay so orac_shutdown and prompt sound don't overlap
+                            time.sleep(0.6) # Delay so orac_shutdown and prompt sound don't overlap 
                     
                     state.is_speaking.clear()
                     time.sleep(0.2) 
@@ -871,14 +889,17 @@ def speak_now(tts, teletype):
         else:
             if state.is_listening.is_set():
                 idle_fault_counter = 0 # Mic is active and healthy
-                tc = state.token_color
-                set_status(f"● INITIATE VOICE COMMUNICATIONS {tc}{FL}▶{NOFL}{RESET}", G)
+                if not getattr(state, 'mic_error', False):
+                    tc = state.token_color
+                    set_status(f"● INITIATE VOICE COMMUNICATIONS {tc}{FL}▶{NOFL}{RESET}", G)
             else:
-                # ORAC is completely idle, but the mic hasn't turned back on...
+                # MIC disconnected and will no longer be available in this session (THIS NEEDS WORK - Re-detection, etc.)
                 idle_fault_counter += 1
-                if idle_fault_counter > 6: # Wait 3 seconds (6 * 0.5s tick)
-                    # The main thread is deadlocked. Force the UI to fallback mode!
+                if idle_fault_counter > 10: # Wait 5 seconds (10 x 0.5s tick) to prevent false triggers during calibration
+                    # Force the UI to fallback mode
+                    state.mic_error = True
                     set_status(f"{FL}●{NOFL} HARDWARE DISCONNECTED: KEYBOARD ONLY", R)
+                    update_header_only() # Instantly reflect the ERR in the stats bar
         
         time.sleep(0.5)
 
@@ -900,7 +921,6 @@ def shutdown_sequence(tts):
         def render_save_prompt(typed=""):
             with state.terminal_lock:
                 sys.stdout.write("\0337") 
-                # Prompt stays on the bottom Row
                 sys.stdout.write(f"\033[{rows};1H\033[2K{G}● SAVE FULL TRANSCRIPT? Y/N (C to Cancel) {FL}▶ {NOFL}{typed}█{RESET}")
                 sys.stdout.write("\0338") 
                 sys.stdout.flush()                
@@ -941,7 +961,7 @@ def shutdown_sequence(tts):
                                 sys.stdout.write(f"\n{R}● TRANSCRIPT PURGED\n\n")
                                 sys.stdout.flush()
                         elif choice == 'c':
-                            cancel_shutdown = True # Flag Cancel
+                            cancel_shutdown = True
                             with state.terminal_lock:
                                 sys.stdout.write(f"\n{A}● SHUTDOWN ABORTED{RESET}\n")
                                 sys.stdout.flush()
@@ -958,7 +978,6 @@ def shutdown_sequence(tts):
 
     # Otherwise, proceed with normal shutdown...
     set_status(f"{FL}●{NOFL} SYSTEM GOING OFFLINE", R)
-        
     set_status(f"{FL}●{NOFL} TERMINATING...", R)
     time.sleep(1)
         
@@ -975,8 +994,9 @@ def shutdown_sequence(tts):
         sys.stdout.flush()
         
     state.running = False 
-    cleanup_processes() # Manually clean up terminal visuals/sounds
-    os._exit(0) # Forcefully trashes the process, ignoring frozen audio threads
+    cleanup_processes()
+    hard_shutdown() 
+
 
 def startup_animation():
     setup_terminal() 
@@ -1018,7 +1038,7 @@ def stream_ai_response(prompt, tts, teletype):
             
         update_token_health()  # Recalculate tokens to allow the loop to exit
         
-    update_header_only() # Only update the header bounds, do not clear the screen
+    update_header_only() # Only update the header bounds, do not clear the screen 
         
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
     temp_history = list(state.history)
@@ -1054,7 +1074,7 @@ def stream_ai_response(prompt, tts, teletype):
     
     #-----------------------#
     # OLLAMA MODEL SETTINGS #
-    #-----------------------#   
+    #-----------------------#  
     
     for chunk in chat(
         model=OLLAMA_MODEL,
@@ -1104,7 +1124,9 @@ def stream_ai_response(prompt, tts, teletype):
                 sentence_buffer = sentence_buffer[split_point:]
             else: break
 
-    if not state.is_interrupted.is_set():
+    was_interrupted = state.is_interrupted.is_set()
+
+    if not was_interrupted:
         if first_chunk: 
             set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
             with state.terminal_lock:
@@ -1134,7 +1156,7 @@ def stream_ai_response(prompt, tts, teletype):
     state.is_processing.clear()
     state.is_interrupted.clear()
     
-    if getattr(state, 'mic_error', False):
+    if getattr(state, 'mic_error', False) and not was_interrupted:
         set_status(f"{FL}●{NOFL} HARDWARE DISCONNECTED: KEYBOARD ONLY", R)
     
 def is_hallucination(text):
@@ -1151,132 +1173,132 @@ def run_local_bot():
     
     startup_animation()
     
-    while state.running: # OUTER RECOVERY LOOP
-        try:
-            # Fresh recognizer every time hardware connects to prevent ghosties
-            # Might need to adjust idle_fault_counter wait .. currently 3 secs
-            recognizer = sr.Recognizer()
-            recognizer.dynamic_energy_threshold = False 
-            recognizer.pause_threshold = 0.8 
-            recognizer.non_speaking_duration = 0.3 
-            recognizer.phrase_threshold = 0.5 
+    try:
+        # Fresh recognizer every time hardware connects to prevent ghosties
+        recognizer = sr.Recognizer()
+        recognizer.dynamic_energy_threshold = False 
+        recognizer.pause_threshold = 0.8 
+        recognizer.non_speaking_duration = 0.3 
+        recognizer.phrase_threshold = 0.5 
+        
+        # Reset the prompt beep flag so it chimes when the mic reconnects..
+        needs_prompt = True
+        
+        with sr.Microphone(sample_rate=16000) as source: 
+            state.mic_error = False
             
-            # Reset the prompt beep flag so it chimes when the mic reconnects..
-            # This isn't working as anticiapted.. Need to test some more.
-            needs_prompt = True
-            
-            with sr.Microphone(sample_rate=16000) as source: 
-                state.mic_error = False
-                with state.terminal_lock: 
-                    sys.stdout.write(f"● {R}CALIBRATING AMBIENT NOISE...{RESET}\n")
-                    sys.stdout.flush()
-                recognizer.adjust_for_ambient_noise(source, duration=1)
-                recognizer.energy_threshold += 75 
-                with state.terminal_lock:
-                    sys.stdout.write(f"● {R}NOISE FLOOR CALIBRATED: {recognizer.energy_threshold:.2f}{RESET}\n\n")
-                    sys.stdout.flush()
+            with state.terminal_lock: 
+                sys.stdout.write(f"● {R}CALIBRATING AMBIENT NOISE...{RESET}\n")
+                sys.stdout.flush()
                 
-                while state.running:
-                    bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.queue.empty()
-                    
-                    if not bot_busy and processing_sound.is_running(): processing_sound.stop()
-
-                    
-                    if bot_busy:
-                        needs_prompt = True 
-                        time.sleep(0.1) 
-                        continue
-                    
-                    if needs_prompt:
-                        set_status("● Adapting to ambient noise...", DIM)
-                        
-                        recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                        recognizer.energy_threshold += 75 
-                        
-                        play_once(SOUND_READY)
-                        needs_prompt = False
-                    
-                    state.is_listening.set()
-                    
-                    try:
-                        audio = recognizer.listen(source, phrase_time_limit=10, timeout=0.2)
-                        state.is_listening.clear()
-                        
-                        set_status("● SIGNAL RECEIVED: DECODING...", A)
-                        
-                        audio_raw = audio.get_raw_data()
-                        audio_float32 = np.frombuffer(audio_raw, dtype=np.int16).astype(np.float32) / 32768.0
-                        
-                        result = mlx_whisper.transcribe(
-                            audio_float32, path_or_hf_repo=WHISPER_MODEL, fp16=True, language='en'
-                        )
-                        
-                        user_text = result['text'].strip()
-                        
-                        del audio_raw
-                        del audio_float32
-                        del result
-                        gc.collect() 
-                        
-                        if len(user_text) < 2 or is_hallucination(user_text): continue
-
-                        clean_text = user_text.lower().strip("'.,! ")
-                        if any(cmd in clean_text for cmd in SHUTDOWN_CMD):
-                            if not shutdown_sequence(tts): 
-                                continue # Go back to listening if aborted
-                            break
-                        
-                        if any(cmd in clean_text for cmd in PURGE_CMD):
-                            state.history.clear()
-                            state.full_message_log.clear()
-                            if state.scroll_offset > 0: resume_live_view()
-                            with state.terminal_lock:
-                                sys.stdout.write(f"\n●{R} LOGIC ARRAYS RESET{RESET}\n\n")
-                                sys.stdout.flush()
-                            set_status("● MEMORY PURGED", R)
-                            tts.say("Very well.  State your enquiry.")
-                            continue
-
-                        if user_text:
-                            state.full_message_log.append(('user', user_text))
-                            
-                            if len(state.full_message_log) > 2000:
-                                state.full_message_log.pop(0)
-                                
-                            if state.scroll_offset > 0: resume_live_view()
-                            
-                            with state.terminal_lock:
-                                sys.stdout.write(f"\r\033[2K{B}{IT}{YOUR_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
-                                sys.stdout.flush()
-                            state.is_interrupted.clear()
-                            state.is_listening.clear() 
-                            state.is_processing.set() 
-                            threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype), daemon=True).start()
-
-                    except sr.WaitTimeoutError: 
-                        continue
-                    except Exception as e:
-                        # INNER LOOP EXCEPTION: Mic was unplugged during response
-                        # Clear the flags and update UI before macOS deadlocks the hardware cleanup
-                        # Still not working as anticipated - Will continue testing.
-                        state.is_listening.clear()
-                        state.mic_error = True
-                        set_status(f"{FL}●{NOFL} HARDWARE DISCONNECTED: KEYBOARD ONLY", R)
-                        break 
-                        
-        except KeyboardInterrupt: 
-            if not shutdown_sequence(tts):
-                continue
-            break
+            recognizer.adjust_for_ambient_noise(source, duration=1)
+            recognizer.energy_threshold += 75 
+            state.noise_floor = recognizer.energy_threshold
+            update_header_only() # Instantly show the new noise floor in the stats bar
             
-        except Exception as e:
-            # OUTER LOOP EXCEPTION: The Mic could not be found or initialized...
-            # Triggers Text-Only Mode UI and sleeps for 3 seconds before trying to reconnect.
-            # I'm not reaching this state - More work to be done to refine.
-            state.is_listening.clear()
-            state.mic_error = True
-            set_status(f"{FL}●{NOFL} MIC DISCONNECTED: KEYBOARD ONLY", R)
-            time.sleep(3)
+            with state.terminal_lock:
+                # Initial text stays on screen and will naturally scroll off
+                sys.stdout.write(f"● {R}NOISE FLOOR CALIBRATED: {state.noise_floor:.2f}{RESET}\n\n")
+                sys.stdout.flush()
             
+            while state.running:
+                bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.queue.empty()
+                
+                if not bot_busy and processing_sound.is_running(): processing_sound.stop()
+                
+                if bot_busy:
+                    needs_prompt = True 
+                    time.sleep(0.1) 
+                    continue
+                
+                if needs_prompt:
+                    set_status("● Adapting to ambient noise...", DIM)
+                    recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                    recognizer.energy_threshold += 75 
+                    state.noise_floor = recognizer.energy_threshold
+                    update_header_only() # Instantly update the stats bar reading
+                    
+                    play_once(SOUND_READY)
+                    needs_prompt = False
+                
+                state.is_listening.set()
+                
+                try:
+                    audio = recognizer.listen(source, phrase_time_limit=10, timeout=0.2)
+                    state.is_listening.clear()
+                    
+                    set_status("● SIGNAL RECEIVED: DECODING...", A)
+                    
+                    audio_raw = audio.get_raw_data()
+                    audio_float32 = np.frombuffer(audio_raw, dtype=np.int16).astype(np.float32) / 32768.0
+                    
+                    result = mlx_whisper.transcribe(
+                        audio_float32, path_or_hf_repo=WHISPER_MODEL, fp16=True, language='en'
+                    )
+                    
+                    user_text = result['text'].strip()
+                    
+                    del audio_raw
+                    del audio_float32
+                    del result
+                    gc.collect() 
+                    
+                    if len(user_text) < 2 or is_hallucination(user_text): continue
+
+                    clean_text = user_text.lower().strip("'.,! ")
+                    if any(cmd in clean_text for cmd in SHUTDOWN_CMD):
+                        if not shutdown_sequence(tts): 
+                            continue 
+                        break
+                    
+                    if any(cmd in clean_text for cmd in PURGE_CMD):
+                        state.history.clear()
+                        state.full_message_log.clear()
+                        if state.scroll_offset > 0: resume_live_view()
+                        with state.terminal_lock:
+                            sys.stdout.write(f"\n●{R} LOGIC ARRAYS RESET{RESET}\n\n")
+                            sys.stdout.flush()
+                        set_status("● MEMORY PURGED", R)
+                        tts.say("Very well.  State your enquiry.")
+                        continue
+
+                    if user_text:
+                        state.full_message_log.append(('user', user_text))
+                        if len(state.full_message_log) > 2000: state.full_message_log.pop(0)
+                        if state.scroll_offset > 0: resume_live_view()
+                        
+                        with state.terminal_lock:
+                            sys.stdout.write(f"\r\033[2K{B}{IT}{YOUR_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
+                            sys.stdout.flush()
+                            
+                        state.is_interrupted.clear()
+                        state.is_listening.clear() 
+                        state.is_processing.set() 
+                        threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype), daemon=True).start()
+
+                except sr.WaitTimeoutError: 
+                    continue
+                except Exception as e:
+                    # Mic was unplugged during the listen process
+                    state.is_listening.clear()
+                    state.mic_error = True
+                    set_status(f"{FL}●{NOFL} HARDWARE DISCONNECTED: KEYBOARD ONLY", R)
+                    update_header_only()
+                    break 
+                    
+    except KeyboardInterrupt: 
+        shutdown_sequence(tts)
+        
+    except Exception as e:
+        # Tried to connect and mic wasn't there
+        state.is_listening.clear()
+        state.mic_error = True
+        set_status(f"{FL}●{NOFL} HARDWARE DISCONNECTED: KEYBOARD ONLY", R)
+        update_header_only()
+        
+    # The permanent Keyboard-Only Fallback Loop
+    while state.running:
+        time.sleep(1)
+
 if __name__ == "__main__":
     run_local_bot()
