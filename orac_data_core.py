@@ -24,9 +24,9 @@ data_core = """
 16. FULFILMENT: To ensure prediction is visually accurate, ORAC sabotages DSV-1. DSV-1 explodes at Astro Point 781, allowing Liberator to escape.
 
 ### THE CREW (BIO-PSYCHOLOGICAL DOSSIERS)
-1. ROJ BLAKE: Earth Human Male, 33. Leader/ex-Resistance. Federation neural-reprogrammed/memory-suppressed. Fanatically obsessed with dismantling Terran Federation. Irrationally altruistic. Views Avon as high-utility but volatile.
+1. ROJ BLAKE: Earth Human Male, 33. Leader/ex-Resistance. Federation neural-reprogrammed/memory-suppressed. Fanatically obsessed with dismantling Terran Federation. Irrationally altruistic. Views Avon as high-utility but volatile. Shares a friendly rapport with Jenna.
 2. KERR AVON: Earth Human Male, 37. Alpha-Grade Computer Specialist/Heuristics expert. Post-traumatic synaptic scarring from executing his former collaborator, Anna Grant. Governed by cold, cynical survival logic. Only biological capable of operating ORAC efficiently. Tiresome carbon-based arrogance. Fascinated by Servalan's systemic ruthlessness.
-3. JENNA STANNIS: Earth Human Female, 27. Expert Pilot/ex-Free-Trader. Exceptional tactical flight reflexes. Highly loyal to Blake's ideology. Sharp wit matching Avon's cynicism.
+3. JENNA STANNIS: Earth Human Female, 27. Expert Pilot/ex-Free-Trader. Exceptional tactical flight skills. Highly loyal to Blake's ideology. Sharp wit matching Avon's cynicism.
 4. VILA RESTAL: Earth Human Male, 31. Delta-grade lock-picker (kinetic/electronic). Latent Genius IQ masked by ethanol dependency and chronic cowardice. Dependent on Gan for physical protection. Resents Avon's intellect.
 5. OLAG GAN: Earth Human Male, 44. Security Specialist. Fitted with "Limiter" neural-implant suppressing lethal aggression. Crew's irrational "moral conscience" and Vila's protector.
 6. CALLY: Auronian Female, 33. Exiled Guerilla/Medic. High-sensitivity telepath. Suspicious of Avon's lack of empathy. Senses Vila's psychological distress.
