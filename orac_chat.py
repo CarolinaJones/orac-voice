@@ -27,7 +27,7 @@ from orac_data_core import data_core
 from orac_personality import orac_personality
 
 #---------------------------------------------------#
-#     ORAC-VOICE v1.1.0 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.1.1 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -62,7 +62,7 @@ TERMINAL_ROWS = 25									# Window Height
 # MODEL VARIABLES  #
 #------------------#
 
-OLLAMA_MODEL = 'mannix/gemma2-9b-simpo:latest'		# gemmea2:9b-simpo WORKS best for ORAC
+OLLAMA_MODEL = 'mannix/gemma2-9b-simpo:latest'		# gemmea2:9b-simpo WORKS best for ORAC												
 MODEL_MAX_TOKENS = 8192								# MAX TOKENS for STATUS Predict & NUM_CTX
 WHISPER_MODEL = './whisper/whisper-large-v3-turbo'	# WHISPER-MLX Model
 
@@ -175,16 +175,17 @@ def cleanup_processes():
 
     if 'processing_sound' in globals() and processing_sound.is_running():
         processing_sound.stop()
-
-    for proc in state.active_procs:
-        try:
-            if proc and proc.poll() is None: proc.terminate()
-        except Exception: pass
-
-        try:
-        	if proc:
-        		proc.wait(timeout=0.4)
-        except: pass
+        
+        with state.proc_lock:
+            for proc in state.active_procs:
+                try:
+                    if proc and proc.poll() is None: proc.terminate()
+                except Exception: pass
+                
+                try:
+                    if proc:
+                        proc.wait(timeout=0.4)
+                except: pass
 
 atexit.register(cleanup_processes)
 
@@ -337,15 +338,29 @@ def ui_refresh_worker():
         if state.ui_needs_redraw:
             state.ui_needs_redraw = False
             draw_ui(full_clear=True) # Clear screen and draw borders
-            if state.scroll_offset > 0:
+            if state.scroll_offset > 0: 
                 redraw_scroll_region()
             else:
                 resume_live_view()   # Restore the chat history
             render_input_box()       # Restore the typing prompt
-        elif counter >= 5:
+            
+            cols, rows = shutil.get_terminal_size()
+            lines = get_wrapped_history_lines(cols)
+            
+            # Calculate exactly where the teletype cursor should resume
+            if state.scroll_offset > 0:
+                target_row = rows - 4
+            else:
+                target_row = min(rows - 4, 5 + len(lines))
+                
+            with state.terminal_lock:
+                sys.stdout.write(f"\033[{target_row};1H")
+                sys.stdout.flush()
+                
+        elif counter >= 5: 
             update_header_only()
             counter = 0
-
+            
         time.sleep(0.5)
         counter += 1
 
@@ -1022,7 +1037,9 @@ def stream_ai_response(prompt, tts, teletype):
         
     else:
         reminder_text += "Return to baseline arrogant, evasive, pedantic behavior. Adhere to [LOGIC_GATE].]"
-
+        
+    reminder_text = BASE + tail
+        
     if temp_history and temp_history[-1]['role'] == 'user':
         # Create a copy of the dictionary so we don't permanently corrupt state.history
         modified_msg = temp_history[-1].copy()
