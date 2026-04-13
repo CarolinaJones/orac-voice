@@ -1,5 +1,5 @@
 #---------------------------------------------------#
-#     ORAC-VOICE v1.0.0 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.0.2 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -20,9 +20,9 @@ def orac_phonetics(text):
         # === Blake's 7 Specifics ===
         r"\bAI\b": "Artificial Intelligence",
         r"\bAvon\b": "Avon",
-        r"\bDSV-1\b": "D. S. V. ONE", r"\bDSV-2\b": "D. S. V. TWO",
+        r"\bDSV-1\b": "D. S. Vee ONE", r"\bDSV-2\b": "D. S. Vee TWO",
         r"\bGan\b": "Gann",
-        r"\bGrant\b": "Grarnt",
+        r"\bGrant\b": "Grarnt", r"\bgranting\b": "grarnting",
         r"\bLaseron\b": "laze'ron", r"\bLasters\b": "blarsters",
         r"\bMutoid\b": "Mew-toid", r"\bMutoids\b": "Mew-toids",
         r"\bORAC\b": "Oarack",
@@ -64,11 +64,12 @@ def orac_phonetics(text):
         r"\bchant\b": "charnt",
         r"\bclass\b": "clarss", 
         r"\bclasp\b": "klarsp", r"\bclasped\b": "klarsped",
-        r"\bcommand\b": "co'marnd", r"\bcommander\b": "commarnder",
+        r"\bcommand\b": "commarnd", r"\bcommander\b": "commarnder", r"\bcommanded\b": "commarnded",
         r"\bcontrast\b": "contrarst", r"\bcontrasting\b": "contrarsting",
         r"\bcraft\b": "krarft", r"\bcrafted\b": "krarfted", r"\bcrafting\b": "krarfting", r"\bcraftstman\b": "crarftsman",
+        r"\bdance\b": "darnce",
         r"\bdemand\b": "d'marnd", r"\bdemanding\b": "d'marnding", r"\bdemands\b": "d'marnds", r"\bdemanded\b": "d'marnded",
-        r"\benhanced\b": "enharnsed", r"\benhancing\b": "enharnsing",
+        r"\benhance\b": "enharnse", r"\benhanced\b": "enharnsed", r"\benhancing\b": "enharnsing",
         r"\bexample\b": "exarmple", r"\bexamples\b": "exarmples",
         r"\bfast\b": "farst", r"\bfaster\b": "farster", r"\bfastest\b": "farstest",
         r"\bglass\b": "glarss",
@@ -77,10 +78,11 @@ def orac_phonetics(text):
         r"\bgrass\b": "grarrss",
         r"\bhalf\b": "harf", r"\bhalves\b": "harves",
         r"\bimplant\b": "implarnt", r"\bneural-implant\b": "nu'ral im'plarnt", r"\bimplanted\b": "implarnted",
-        r"\blast\b": "larst", r"\blasted\b": "larsted", r"\blasting\b": "larsting",
+        r"\blast\b": "larst", r"\blasted\b": "larsted", r"\blasting\b": "larsting", r"\blastly\b": "larstly",
         r"\blaugh\b": "larf", r"\blaughing\b": "larfing", r"\blaughter\b": "larf-tah",
         r"\bmask\b": "marsk", r"\bmasked\b": "marsked", r"\bmasking\b": "marsking",
         r"\bmaster\b": "marster", r"\bmastery\b": "marstery",
+        r"\bnasty\b": "narsty",
         r"\bpass\b": "parss", r"\bpassable\b": "parssable", r"\bpassed\b": "parssed",
         r"\bpast\b": "parst", r"\bpaths\b": "parths", r"\bpathways\b": "parth-ways",
         r"\bplant\b": "plarnt", r"\bplanted\b": "plarnted",
@@ -96,7 +98,7 @@ def orac_phonetics(text):
         # === General British Phonetics ===
         r"\badvancement\b": "advarncement", r"\badvantage\b": "ad'varntage",
         r"\baluminum\b": "al-yoo-min'ee'um",
-        r"\banti\b": "an-tee",
+        r"\banti\b": "an-tee", r"\articulate\b": "artic-ul'ate",
         r"\bconstruct\b": "conn-struct",
         r"\bexile\b": "ex'ile", r"\bexiled\b": "exx'iled",
         r"\belaborate\b": "elabor'rate",
@@ -111,7 +113,7 @@ def orac_phonetics(text):
         r"\broute\b": "root",
         r"\bsatisifed\b": "satisfied",
         r"\bschedule\b": "shed-yool",
-        r"\btraverse\b": "tre'verss", r"\btraversess\b": "trah'verss'es", r"\btraversing\b": "tre'verssing",
+        r"\btraverse\b": "tre'verss", r"\btraverses\b": "trah'verss'es", r"\btraversing\b": "tre'verssing",
         r"\bvia\b": "vy'ah",
         r"\byour\b": "yor",
         
@@ -121,6 +123,10 @@ def orac_phonetics(text):
         r"\billogical\b": "ill'loji'kol",
         r"\bI've\b": "I have", r"\bI'll\b": "I will",
         r"\binquiry\b": "in-kwirey", r"\binquiries\b": "in-kwireys",
+        r"\bkindergarten-level\b": "childish", r"\bkindergarten levels\b": "mediocre levels",
+        
+        # === MORE Contractions ===
+        r"\bdon't\b": "do not", r"\bwon't\b": "will not", r"\byou're\b": "you are", r"\bit's\b": "it is", r"\bwe're\b": "we are", r"\bthey're\b": "they are",
     }
    
     for pattern, phonetic in corrections.items():
