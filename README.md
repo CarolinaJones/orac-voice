@@ -91,6 +91,12 @@ pip install mlx-whisper hf_transfer SpeechRecognition PyAudio ollama numpy PyObj
 curl -LsSf https://hf.co/cli/install.sh | bash
 hf download mlx-community/whisper-large-v3-turbo --local-dir ./whisper/whisper-large-v3-turbo
 ```
+You may wish to try this model as a smaller alternative:
+```bash
+hf download mlx-community/whisper-large-v3-turbo-q4 --local-dir ./whisper/whisper-turbo-q4
+```
+*(Rememeber to udate the `WHISPER_MODEL =` in orac_chat.py if using this model.)*
+
 **5. 'Hack' to allow Terminal to use Apple Personal Voice:**
 
 To authenicate Personal Voice in Terminal, paste this code in to your Terminal shell and press `Return`.
