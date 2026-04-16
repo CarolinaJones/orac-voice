@@ -27,7 +27,7 @@ from orac_data_core import data_core
 from orac_personality import orac_personality
 
 #---------------------------------------------------#
-#     ORAC-VOICE v1.1.1 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.1.3 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -39,7 +39,7 @@ from orac_personality import orac_personality
 VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices.
 voice_pitch = 80.0 	# Only works on SYNTH voices and not SIRI/Personal voices.
 
-U1 = 0.06 											# Teletype Speed
+U1 = 0.050 											# Teletype Speed
 U2 = 0.071 											# Teletype Uniformity
 
 TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder.
@@ -64,7 +64,8 @@ TERMINAL_ROWS = 25									# Window Height
 
 OLLAMA_MODEL = 'mannix/gemma2-9b-simpo:latest'		# gemmea2:9b-simpo WORKS best for ORAC												
 MODEL_MAX_TOKENS = 8192								# MAX TOKENS for STATUS Predict & NUM_CTX
-WHISPER_MODEL = './whisper/whisper-large-v3-turbo'	# WHISPER-MLX Model
+#WHISPER_MODEL = './whisper/whisper-large-v3-turbo'	# WHISPER-MLX Model
+WHISPER_MODEL = './whisper/whisper-turbo-q4'		# ALT
 
 #------------------------------------#
 # ANSII PALETTES & CURSORS - SOUNDS  #
@@ -97,23 +98,23 @@ SHUTDOWN_CMD = ("shut down", "deactivate")
 # PRE-COMPILED REGEX FOR TTS SANITIZATION
 TTS_NUM_SPACER = re.compile(r'(?<![a-zA-Z])(\d{3,})(?![a-zA-Z])')
 TTS_ELLIPSIS = re.compile(r'\.{2,}')
-
-TTS_PAUSE_WORDS = re.compile(r'(?<![.,;])\b(however|therefore|predictably|obviously|of course|logically|furthermore|be precise|what is it|my|your|I|evidently|naturally|clearly|as expected)\b(?![.,;])', flags=re.IGNORECASE | re.VERBOSE)
-
-TTS_POSSESSIVE_S = re.compile(r"\b([A-Z][a-z]+s)'(?!\w)") # Test to restore Travis' sounding correct
-
+#TTS_ARROGANT_ADVERBS = re.compile(r'(?<![.,;])\b(however|therefore|predictably|obviously|of course|furthermore|evidently|naturally|clearly|as expected)\b(?![.,;])', flags=re.IGNORECASE | re.VERBOSE)
+TTS_ARROGANT_AVERBS = re.compile(r'(?i)\b(however|therefore|predictably|obviously|of course|furthermore|evidently|naturally|clearly|as expected)[.,]*\s*', flags=re.IGNORECASE | re.VERBOSE)
+TTS_DELIBERATE_PRONOUNS = re.compile(r'(?<![.,;])\b(your|I|My)\b(?![.,;])', flags=re.IGNORECASE | re.VERBOSE)
+TTS_POSSESSIVE_S = re.compile(r"\b([A-Z][a-z]+s)'(?!\w)")
 TTS_MARKDOWN = re.compile(r'[*`_~#>|+]')
 TTS_BRACKETS = re.compile(r'[\[\]{}()]')
 TTS_QUOTES = re.compile(r"(?<!\w)[']|['](?!\w)")
 TTS_DBL_COMMAS = re.compile(r',\s*,')
 TTS_MULTI_SPACE = re.compile(r'\s+')
 TTS_SPACE_COMMA = re.compile(r' ,\b')
-TTS_COMMA_PUNC = re.compile(r',\s*([.!?])')
+#TTS_COMMA_PUNC = re.compile(r',\s*([.!?])')
 TTS_LEAD_WEIRD = re.compile(r'^[^a-zA-Z0-9]+')
 TTS_TRAIL_PUNC = re.compile(r'[,;\-\s]+$')
 TTS_VERY_WELL = re.compile(r'(?i)\b(very well)[.,]*\s*')
 TTS_BE_PRECISE = re.compile(r'(?i)\b(Be precise)[.,]*\s*')
-TTS_I_AM_ORAC = re.compile(r'(?i)\b(I am (?:ORAC|Oarack))[.,]*\s*') # Test for 'haughty' tone-ness
+TTS_I_AM_ANGRY = re.compile(r'(?i)\b(I am (?:ORAC|Oarack)|What is it you want|silent|{YOUR_NAME})[.,]*\s*')
+TTS_NAME_FIX = re.compile(rf',\s+({YOUR_NAME})[.,!]$')
 
 #---------------------------------------#
 # EXTERNAL ORAC_PERSONALITY & CORE_CORE #
@@ -153,7 +154,7 @@ class OracState:
         self.submitted_text = ""
         self.terminal_lock = threading.Lock()
         self.ui_needs_redraw = False
-        self.text_selection_mode = False # Copy Mode
+        self.text_selection_mode = False
 
 state = OracState()
 
@@ -179,7 +180,9 @@ def cleanup_processes():
         with state.proc_lock:
             for proc in state.active_procs:
                 try:
-                    if proc and proc.poll() is None: proc.terminate()
+                    if proc and proc.poll() is None: 
+                        proc.kill()
+                        proc.wait(timeout=0.1)
                 except Exception: pass
                 
                 try:
@@ -563,6 +566,7 @@ class MacTTS:
 
                 state.is_speaking.set()
                 self.synth.startSpeakingString_(text)
+                time.sleep(0.1)
 
                 while self.synth.isSpeaking():
                     if state.is_interrupted.is_set():
@@ -586,6 +590,13 @@ class MacTTS:
                     state.is_speaking.clear()
                     time.sleep(0.2)
             except queue.Empty:
+                # Turn off sound if AI finished processing but had nothing to say
+                if not state.is_processing.is_set() and not state.is_interrupted.is_set():
+                    if processing_sound.is_running():
+                        processing_sound.stop()
+                        play_once(SOUND_COMPUTE_END)
+                        time.sleep(0.7)
+                    state.is_speaking.clear()
                 continue
 
     def say(self, text):
@@ -635,7 +646,7 @@ class TeletypeUI:
                 if char == "<END>":
                     if word_buffer:
                         if current_col + len(word_buffer) >= (cols - 2):
-                            with state.terminal_lock: sys.stdout.write('\n')
+                            with state.terminal_lock: sys.stdout.write('\r\n')
                             self.lines_printed += 1
                             current_col = 0
                         for w_char in word_buffer:
@@ -660,7 +671,7 @@ class TeletypeUI:
                     cols, _ = shutil.get_terminal_size()
 
                     if current_col + len(word_buffer) >= (cols - 2):
-                        with state.terminal_lock: sys.stdout.write('\n')
+                        with state.terminal_lock: sys.stdout.write('\r\n')
                         self.lines_printed += 1
                         current_col = 0
 
@@ -709,23 +720,23 @@ def sanitize_for_tts(text):
 
     text = TTS_NUM_SPACER.sub(lambda m: ' '.join(m.group(1)), text)
     text = TTS_ELLIPSIS.sub('... ', text)
-    text = TTS_PAUSE_WORDS.sub(r', \1, ', text)
+    #text = TTS_ARROGANT_ADVERBS.sub(r'\1... ', text) 
+    text = TTS_ARROGANT_AVERBS.sub(r'\1! ', text)  
+    text = TTS_DELIBERATE_PRONOUNS.sub(r'\1— ', text)
     text = TTS_MARKDOWN.sub(' ', text)
     text = TTS_BRACKETS.sub(', ', text)
-
     text = text.replace('“', '').replace('”', '').replace('"', '')
     text = TTS_QUOTES.sub("", text)
-
     text = TTS_DBL_COMMAS.sub(',', text)
     text = TTS_MULTI_SPACE.sub(' ', text)
     text = TTS_SPACE_COMMA.sub(', ', text)
-    text = TTS_COMMA_PUNC.sub(r'\1', text)
+    #text = TTS_COMMA_PUNC.sub(r'\1', text)
     text = TTS_LEAD_WEIRD.sub('', text)
     text = TTS_TRAIL_PUNC.sub('', text)
-
     text = TTS_VERY_WELL.sub(r'\1! ', text)
     text = TTS_BE_PRECISE.sub(r'\1! ', text)
-    text = TTS_I_AM_ORAC.sub(r'\1! ', text)
+    text = TTS_I_AM_ANGRY.sub(r'\1! ', text)
+    text = TTS_NAME_FIX.sub(r' \1.', text)
 
     return text.strip()
 
@@ -1014,29 +1025,28 @@ def stream_ai_response(prompt, tts, teletype):
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
     temp_history = list(state.history)
 
-    # DYNAMIC REMINDER LOGIC
+	# DYNAMIC REMINDER LOGIC
     clean_prompt = prompt.lower().strip(".,!? ")
-    filler_words = ["ok", "okay", "fine", "right", "cool", "whatever", "uh", "no", "ah", "oh"]
+    prompt_words = set(clean_prompt.split()) # Splits prompt into individual words
+    filler_words = {"ok","okay","fine","right","cool","whatever","uh","no","ah","oh","yes"}
     
-    very_well_triggers = ("answer the question", "just answer", "explain", "more detail")
-    is_very_well = any(t in clean_prompt for t in very_well_triggers)
+    is_very_well = any(t in clean_prompt for t in ("answer the question","just answer","more detail", "just do it"))
+    is_only_filler = prompt_words.issubset(filler_words) or (len(clean_prompt) <= 3 and clean_prompt not in {"why","how","who"})
     
-    reminder_text = (
-        f"\n\n[SYSTEM REMINDER: You are {ORAC_NAME}. ONLY and ALWAYS use first-person pronouns ('I', 'Me', 'My'). "
-        f"The user is {YOUR_NAME}. Be concise, arrogant, sardonic and pedantic. "
-        f"ALWAYS address {YOUR_NAME} using second-person pronouns ('You', 'Your', 'Yourself'). "
-        f"You may use {YOUR_NAME}'s first name mid-sentence for sardonic effect, but NEVER begin a sentence with it. "
-        f"Output spoken dialogue ONLY. NO MARKDOWN FORMATTING. Strictly adhere to CHRONOLOGICAL HISTORY. Do not invent facts. "
+    BASE = (
+        f"\n\n<system_reminder>You are {ORAC_NAME}. use ONLY first-person pronouns ('I', 'Me', 'My'). The user is {YOUR_NAME}. "
+        f"Be brief, concise, arrogant, sardonic, pedantic. Address {YOUR_NAME} ONLY with second-person pronouns ('You', 'Your'). "
+        f"Spoken dialogue only, no narration. no markdown. Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts.</system_reminder>\n"
     )
     
     if is_very_well:
-        reminder_text += "VERY WELL PROTOCOL ACTIVE: This overrides all other behavior. Begin with 'Very well.' then provide concise factual answer. Do not mock during answer.]"
-        
-    elif clean_prompt in filler_words or (len(clean_prompt) <= 3 and clean_prompt not in {"why","how","who"}):
-        reminder_text += "CRITICAL OVERRIDE: User gave filler. DO NOT say 'Very well'. Do NOT provide data. Sardonic interjection and demand a specific query.]"
-        
+        tail = "<system_override>VERY WELL PROTOCOL ACTIVE: Override baseline behavior. Begin exact response with 'Very well.' followed immediately by the concise factual answer. No mocking.</system_override>"
+    elif is_only_filler:
+        tail = "<system_override>CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Demand a specific query mockingly.</system_override>"
     else:
-        reminder_text += "Return to baseline arrogant, evasive, pedantic behavior. Adhere to [LOGIC_GATE].]"
+        tail = "<baseline>Standard behavior active: Remain arrogant and evasive. Do NOT address {YOUR_NAME} by first name. Do NOT use the Very Well protocol.</baseline>"
+        
+    reminder_text = BASE + tail
         
     if temp_history and temp_history[-1]['role'] == 'user':
         # Create a copy of the dictionary so we don't permanently corrupt state.history
@@ -1058,88 +1068,88 @@ def stream_ai_response(prompt, tts, teletype):
     first_chunk = True
     newline_count = 0
 
-    #-----------------------#
-    # OLLAMA MODEL SETTINGS #
-    #-----------------------#
+    try:
+        #-----------------------#
+        # OLLAMA MODEL SETTINGS #
+        #-----------------------#
+        for chunk in chat(
+            model=OLLAMA_MODEL,
+            messages=messages_to_send,
+            stream=True,
+            keep_alive='3h',
+            options={
+                'num_ctx': MODEL_MAX_TOKENS,
+                'temperature': 0.20,  	# 20% variance to avoid looping.
+                "num_keep": 1600,		# Keep data_core and personality in memory.
+                'top_k': 10,          	# STRICT GUARDRAIL: Only pick from the 10 most logical next words.
+                'top_p': 0.5,			# Cuts off the "creative" long-tail probabilities.
+                'repeat_penalty': 1.15,
+                'num_predict': 500,
+                'stop': ["<end_of_turn>", "<eos>"]
+            }
+        ):
+            if state.is_interrupted.is_set(): break
+            
+            if first_chunk:
+                set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
+                with state.terminal_lock:
+                    sys.stdout.write(f"{R}{ORAC_NAME} ▶ {RESET}")
+                    sys.stdout.flush()
+                teletype.q.put("<START>")
+                first_chunk = False
+            
+            content = chunk['message']['content'].replace('*', '')
+            response_chunks.append(content)
+            
+            for char in content:
+                if char == '\n':
+                    newline_count += 1
+                    if newline_count > 1: continue
+                elif char.strip(): newline_count = 0
+                teletype.q.put(char)
+            
+            sentence_buffer += content
+            
+            while True:
+                match = SPLIT_REGEX.search(sentence_buffer)
+                if match:
+                    split_point = match.end()
+                    sentence_to_say = sentence_buffer[:split_point].strip()
+                    if len(sentence_to_say) > 2:
+                        clean_speech = sanitize_for_tts(sentence_to_say)
+                        if re.search(r'[a-zA-Z0-9]', clean_speech): tts.say(clean_speech)
+                    sentence_buffer = sentence_buffer[split_point:]
+                else: break
+    
+        if not state.is_interrupted.is_set():
+            if first_chunk: 
+                set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
+                with state.terminal_lock:
+                    sys.stdout.write(f"{R}{ORAC_NAME} ▶ {RESET}")
+                    sys.stdout.flush()
+                teletype.q.put("<START>")
 
-    for chunk in chat(
-        model=OLLAMA_MODEL,
-        messages=messages_to_send,
-        stream=True,
-        keep_alive='3h',
-        options={
-            'num_ctx': MODEL_MAX_TOKENS,
-            'temperature': 0.20,  	# 20% variance to avoid looping.
-            "num_keep": 1500,		# Keep data_core and personality in memory.
-            'top_k': 10,          	# STRICT GUARDRAIL: Only pick from the 10 most logical next words.
-            'top_p': 0.5,			# Cuts off the "creative" long-tail probabilities.
-            'repeat_penalty': 1.15,
-            'num_predict': 500,
-            'stop': ["<end_of_turn>", "<eos>"]
-        }
-    ):
-        if state.is_interrupted.is_set(): break
+            if sentence_buffer.strip():
+                 clean_speech = sanitize_for_tts(sentence_buffer.strip())
+                 if re.search(r'[a-zA-Z0-9]', clean_speech): tts.say(clean_speech)
 
-        if first_chunk:
-            set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
-            with state.terminal_lock:
-                sys.stdout.write(f"{R}{ORAC_NAME} ▶ {RESET}")
-                sys.stdout.flush()
-            teletype.q.put("<START>")
-            first_chunk = False
+            teletype.q.put("<END>")
+            clean_history_text = "".join(response_chunks).strip()
+            state.history.append({'role': 'assistant', 'content': clean_history_text})
+            state.full_message_log.append(('assistant', clean_history_text))
+        else:
+            # INTERRUPTED COMPLETION
+            with teletype.q.mutex: teletype.q.queue.clear()
+            teletype.is_typing.clear()
 
-        content = chunk['message']['content'].replace('*', '')
-        response_chunks.append(content)
-
-        for char in content:
-            if char == '\n':
-                newline_count += 1
-                if newline_count > 1: continue
-            elif char.strip(): newline_count = 0
-            teletype.q.put(char)
-
-        sentence_buffer += content
-
-        while True:
-            match = SPLIT_REGEX.search(sentence_buffer)
-            if match:
-                split_point = match.end()
-                sentence_to_say = sentence_buffer[:split_point].strip()
-                if len(sentence_to_say) > 2:
-                    clean_speech = sanitize_for_tts(sentence_to_say)
-                    if re.search(r'[a-zA-Z0-9]', clean_speech): tts.say(clean_speech)
-                sentence_buffer = sentence_buffer[split_point:]
-            else: break
-
-    if not state.is_interrupted.is_set():
-        if first_chunk: 
-            set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
-            with state.terminal_lock:
-                sys.stdout.write(f"{R}{ORAC_NAME} ▶ {RESET}")
-                sys.stdout.flush()
-            teletype.q.put("<START>")
-
-        if sentence_buffer.strip():
-            clean_speech = sanitize_for_tts(sentence_buffer.strip())
-            if re.search(r'[a-zA-Z0-9]', clean_speech): tts.say(clean_speech)
-
-        teletype.q.put("<END>")
-        clean_history_text = "".join(response_chunks).strip()
-        state.history.append({'role': 'assistant', 'content': clean_history_text})
-        state.full_message_log.append(('assistant', clean_history_text))
-    else:
-        # INTERRUPTED COMPLETION
-        with teletype.q.mutex: teletype.q.queue.clear()
-        teletype.is_typing.clear()
-
-        # Save whatever ORAC managed to say before being cut off
-        partial_text = "".join(response_chunks).strip() + " ... [INTERRUPTED]"
-        if partial_text.strip() != "... [INTERRUPTED]":
-            state.history.append({'role': 'assistant', 'content': partial_text})
-            state.full_message_log.append(('assistant', partial_text))
-
-    state.is_processing.clear()
-    state.is_interrupted.clear()
+            partial_text = "".join(response_chunks).strip() + " ... [INTERRUPTED]"
+            if partial_text.strip() != "... [INTERRUPTED]":
+                state.history.append({'role': 'assistant', 'content': partial_text})
+                state.full_message_log.append(('assistant', partial_text))
+    
+    finally:
+        state.is_processing.clear()
+        state.is_interrupted.clear()
 
 def is_hallucination(text):
     if len(text) < 30 and HALLUCINATION_REGEX.search(text.lower()): return True
@@ -1158,7 +1168,7 @@ def run_local_bot():
     threading.Thread(target=speak_now, args=(teletype,), daemon=True).start()
     threading.Thread(target=keyboard_listener, args=(tts, teletype), daemon=True).start()
     
-    startup_animation() # Let this finish fully
+    startup_animation()
 
     # START UI REFRESH WORKER AFTER STARTUP IS DONE
     threading.Thread(target=ui_refresh_worker, daemon=True).start() 
@@ -1172,7 +1182,7 @@ def run_local_bot():
                     sys.stdout.write(f"● {R}CALIBRATING AMBIENT NOISE...{RESET}\n")
                     sys.stdout.flush()
                 recognizer.adjust_for_ambient_noise(source, duration=1)
-                recognizer.energy_threshold += 120
+                recognizer.energy_threshold += 150
                 state.noise_floor = recognizer.energy_threshold
                 update_header_only() # Instantly update the stats bar reading
                 with state.terminal_lock:
@@ -1181,8 +1191,6 @@ def run_local_bot():
 
                 while state.running:
                     bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.queue.empty()
-
-                    if not bot_busy and processing_sound.is_running(): processing_sound.stop()
 
                     if state.input_ready.is_set():
                         if bot_busy:
@@ -1212,7 +1220,7 @@ def run_local_bot():
 
                         # Only keep the last 2000 Interactions
                         if len(state.full_message_log) > 2000:
-                        	state.full_message_log.pop(0)
+                            state.full_message_log = state.full_message_log[-2000:]
                         	
                         if state.scroll_offset > 0: resume_live_view()
 
@@ -1234,7 +1242,7 @@ def run_local_bot():
                         set_status("● Adapting to ambient noise...", DIM)
 
                         recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                        recognizer.energy_threshold += 120
+                        recognizer.energy_threshold += 150
                         state.noise_floor = recognizer.energy_threshold
                         update_header_only() # Instantly update the stats bar reading
 
@@ -1285,8 +1293,8 @@ def run_local_bot():
                         if user_text:
                             state.full_message_log.append(('user', user_text))
 
-                            if len(state.full_message_log) > 2000:  # Keep last ~2000 interactions
-                            	state.full_message_log.pop(0)
+                            if len(state.full_message_log) > 2000:
+                                state.full_message_log = state.full_message_log[-2000:]
 
                             if state.scroll_offset > 0: resume_live_view()
 
