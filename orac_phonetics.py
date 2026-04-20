@@ -43,7 +43,7 @@ def orac_phonetics(text):
         r"\bEMP\b": "E.M.P", r"\bexoplanet\b": "Exo'planet",
         r"\bfacade\b": "fas'arde",
         r"\bimplants\b": "implarnts",
-        r"\bprocess\b": "pro-cess", r"\bprocesses\b": "pro'sesses", r"\bprocessing\b": "proe'cesssing", r"\bprocessors\b": "proe'sessors",
+        r"\bprocess\b": "proe''cess", r"\bprocesses\b": "proe''cesses", r"\bprocessing\b": "proe'cesssing", r"\bprocessors\b": "proe'cessors",
         r"\bprogress\b": "proe'gress",
         r"\bstatus\b": "staytus",
         r"\bsurpasses\b": "sur'parsses", r"\bsurpassing\b": "surr-parssing", r"\bsurpassed\b": "sur'parssed",
