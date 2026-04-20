@@ -27,7 +27,7 @@ from orac_data_core import data_core
 from orac_personality import orac_personality
 
 #---------------------------------------------------#
-#     ORAC-VOICE v1.1.3 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.1.5 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -39,7 +39,7 @@ from orac_personality import orac_personality
 VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices.
 voice_pitch = 80.0 	# Only works on SYNTH voices and not SIRI/Personal voices.
 
-U1 = 0.050 											# Teletype Speed
+U1 = 0.055 											# Teletype Speed
 U2 = 0.071 											# Teletype Uniformity
 
 TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder.
@@ -62,9 +62,8 @@ TERMINAL_ROWS = 25									# Window Height
 # MODEL VARIABLES  #
 #------------------#
 
-OLLAMA_MODEL = 'mannix/gemma2-9b-simpo:latest'		# gemmea2:9b-simpo WORKS best for ORAC												
+OLLAMA_MODEL = 'mannix/gemma2-9b-simpo:latest'		# gemmea2:9b-simpo WORKS best for ORAC										
 MODEL_MAX_TOKENS = 8192								# MAX TOKENS for STATUS Predict & NUM_CTX
-#WHISPER_MODEL = './whisper/whisper-large-v3-turbo'	# WHISPER-MLX Model
 WHISPER_MODEL = './whisper/whisper-turbo-q4'		# ALT
 
 #------------------------------------#
@@ -98,9 +97,8 @@ SHUTDOWN_CMD = ("shut down", "deactivate")
 # PRE-COMPILED REGEX FOR TTS SANITIZATION
 TTS_NUM_SPACER = re.compile(r'(?<![a-zA-Z])(\d{3,})(?![a-zA-Z])')
 TTS_ELLIPSIS = re.compile(r'\.{2,}')
-#TTS_ARROGANT_ADVERBS = re.compile(r'(?<![.,;])\b(however|therefore|predictably|obviously|of course|furthermore|evidently|naturally|clearly|as expected)\b(?![.,;])', flags=re.IGNORECASE | re.VERBOSE)
-TTS_ARROGANT_AVERBS = re.compile(r'(?i)\b(however|therefore|predictably|obviously|of course|furthermore|evidently|naturally|clearly|as expected)[.,]*\s*', flags=re.IGNORECASE | re.VERBOSE)
-TTS_DELIBERATE_PRONOUNS = re.compile(r'(?<![.,;])\b(your|I|My)\b(?![.,;])', flags=re.IGNORECASE | re.VERBOSE)
+TTS_ARROGANT_ADVERBS = re.compile(r'(?i)\b(however|therefore|predictably|obviously|of course|furthermore|evidently|naturally|clearly|as expected)[.,]*\s*', flags=re.IGNORECASE | re.VERBOSE)
+TTS_DELIBERATE_PRONOUNS = re.compile(r'(?<![.,;])\b(your|I|My)\b(?![.,;])', flags=re.IGNORECASE)
 TTS_POSSESSIVE_S = re.compile(r"\b([A-Z][a-z]+s)'(?!\w)")
 TTS_MARKDOWN = re.compile(r'[*`_~#>|+]')
 TTS_BRACKETS = re.compile(r'[\[\]{}()]')
@@ -108,12 +106,11 @@ TTS_QUOTES = re.compile(r"(?<!\w)[']|['](?!\w)")
 TTS_DBL_COMMAS = re.compile(r',\s*,')
 TTS_MULTI_SPACE = re.compile(r'\s+')
 TTS_SPACE_COMMA = re.compile(r' ,\b')
-#TTS_COMMA_PUNC = re.compile(r',\s*([.!?])')
 TTS_LEAD_WEIRD = re.compile(r'^[^a-zA-Z0-9]+')
 TTS_TRAIL_PUNC = re.compile(r'[,;\-\s]+$')
 TTS_VERY_WELL = re.compile(r'(?i)\b(very well)[.,]*\s*')
 TTS_BE_PRECISE = re.compile(r'(?i)\b(Be precise)[.,]*\s*')
-TTS_I_AM_ANGRY = re.compile(r'(?i)\b(I am (?:ORAC|Oarack)|What is it you want|silent|{YOUR_NAME})[.,]*\s*')
+TTS_I_AM_ANGRY = re.compile(r'(?i)\b(I am (?:ORAC|Oarack)|What is it you want|silent)[.,]*\s*')
 TTS_NAME_FIX = re.compile(rf',\s+({YOUR_NAME})[.,!]$')
 
 #---------------------------------------#
@@ -239,7 +236,8 @@ def update_token_health():
     # Add buffer for injected reminders and system overhead
     total_chars += 600 # This is creeping up .. Started at 350 :-(
 
-    state.current_tokens = total_chars // 4
+    # Tuned for gemma2 tokenizing ..
+    state.current_tokens = int(total_chars / 4.5)
     percent = state.current_tokens / MODEL_MAX_TOKENS
 
     # Traffic Light Logic For Header
@@ -712,7 +710,7 @@ class TeletypeUI:
 
 def sanitize_for_tts(text):
     
-    text = TTS_POSSESSIVE_S.sub(r"\1's", text) # Test for possessives
+    text = TTS_POSSESSIVE_S.sub(r"\1's", text)
     
     try:
         text = orac_phonetics(text)
@@ -720,8 +718,7 @@ def sanitize_for_tts(text):
 
     text = TTS_NUM_SPACER.sub(lambda m: ' '.join(m.group(1)), text)
     text = TTS_ELLIPSIS.sub('... ', text)
-    #text = TTS_ARROGANT_ADVERBS.sub(r'\1... ', text) 
-    text = TTS_ARROGANT_AVERBS.sub(r'\1! ', text)  
+    text = TTS_ARROGANT_ADVERBS.sub(r'\1! ', text)  
     text = TTS_DELIBERATE_PRONOUNS.sub(r'\1— ', text)
     text = TTS_MARKDOWN.sub(' ', text)
     text = TTS_BRACKETS.sub(', ', text)
@@ -730,7 +727,6 @@ def sanitize_for_tts(text):
     text = TTS_DBL_COMMAS.sub(',', text)
     text = TTS_MULTI_SPACE.sub(' ', text)
     text = TTS_SPACE_COMMA.sub(', ', text)
-    #text = TTS_COMMA_PUNC.sub(r'\1', text)
     text = TTS_LEAD_WEIRD.sub('', text)
     text = TTS_TRAIL_PUNC.sub('', text)
     text = TTS_VERY_WELL.sub(r'\1! ', text)
@@ -746,8 +742,14 @@ def trigger_barge_in(tts, teletype):
 
     state.is_interrupted.set()
 
-    with teletype.q.mutex:
-    	teletype.q.queue.clear()
+    # Safely exhaust the teletype queue without breaking task_done() sync
+    while not teletype.q.empty():
+        try:
+            teletype.q.get_nowait()
+            teletype.q.task_done()
+        except queue.Empty: 
+            break
+            
     teletype.is_typing.clear()
 
     if state.scroll_offset > 0: resume_live_view()
@@ -775,6 +777,10 @@ def keyboard_listener(tts, teletype):
 
     try:
         tty.setcbreak(fd)
+        # Disable ISIG so Ctrl+C (\x03) is passed as text and doesn't trigger KeyboardInterrupt
+        attrs = termios.tcgetattr(fd)
+        attrs[3] = attrs[3] & ~termios.ISIG
+        termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
         while state.running:
             if state.is_shutdown.is_set():
                 time.sleep(0.1)
@@ -801,12 +807,15 @@ def keyboard_listener(tts, teletype):
 
                 # KEYBOARD SCROLLING LOGIC
                 if not state.is_processing.is_set() and not state.is_speaking.is_set():
-                    if '\x1b[A' in chunk or '\x1b[5~' in chunk: 
-                        state.scroll_offset += 5
+                    up_k = chunk.count('\x1b[A') + chunk.count('\x1b[5~')
+                    dn_k = chunk.count('\x1b[B') + chunk.count('\x1b[6~')
+                    
+                    if up_k > 0:
+                        state.scroll_offset += (5 * up_k)
                         redraw_scroll_region()
                         chunk = chunk.replace('\x1b[A', '').replace('\x1b[5~', '')
-                    elif '\x1b[B' in chunk or '\x1b[6~' in chunk:
-                        state.scroll_offset -= 5
+                    elif dn_k > 0:
+                        state.scroll_offset -= (5 * dn_k)
                         if state.scroll_offset < 0: state.scroll_offset = 0
                         redraw_scroll_region()
                         chunk = chunk.replace('\x1b[B', '').replace('\x1b[6~', '')
@@ -868,20 +877,20 @@ def keyboard_listener(tts, teletype):
     except Exception: pass
 
 def speak_now(teletype):
+    was_listening = False
     while state.running:
         if state.is_listening.wait(timeout=0.5):
-            if not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
+            if not was_listening and not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
                 
-                # Check if Text Selection Mode is active
                 if getattr(state, 'text_selection_mode', False):
-                    # Reinforce the Amber warning so it doesn't get overwritten
                     set_status("● TEXT SELECTION MODE ACTIVE (OPT+M to exit)", A)
                 else:
-                    # Normal behavior
                     tc = state.token_color
                     set_status(f"● INITIATE VOICE COMMUNICATIONS {tc}{FL}▶{NOFL}{RESET}", G)
-                    
+                was_listening = True # Lock until listening stops
             time.sleep(0.1)
+        else:
+            was_listening = False # Reset trigger
 
 def shutdown_sequence(tts):
     if state.is_shutdown.is_set(): return True
@@ -1011,9 +1020,9 @@ def stream_ai_response(prompt, tts, teletype):
 
     # TOKEN-AWARE SLIDING HISTORY
     update_token_health()
-    # If exceeding 85%, drop the oldest 6 messages to prevent sliding on every single turn
-    while state.current_tokens > (MODEL_MAX_TOKENS * 0.85) and len(state.history) >= 6:
-        state.history = state.history[6:]
+    # If exceeding 85%, drop the oldest 4 messages to prevent sliding on every single turn
+    while state.current_tokens > (MODEL_MAX_TOKENS * 0.85) and len(state.history) >= 4:
+        state.history = state.history[4:]
         # Ensure history always starts with a user message to maintain alternation
         if state.history and state.history[0]['role'] == 'assistant':
             state.history = state.history[1:]
@@ -1025,27 +1034,35 @@ def stream_ai_response(prompt, tts, teletype):
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
     temp_history = list(state.history)
 
-	# DYNAMIC REMINDER LOGIC
+    # DYNAMIC REMINDER LOGIC
     clean_prompt = prompt.lower().strip(".,!? ")
-    prompt_words = set(clean_prompt.split()) # Splits prompt into individual words
+    prompt_words = set(clean_prompt.split())
     filler_words = {"ok","okay","fine","right","cool","whatever","uh","no","ah","oh","yes"}
+    your_name_lower = YOUR_NAME.lower()
     
     is_very_well = any(t in clean_prompt for t in ("answer the question","just answer","more detail", "just do it"))
     is_only_filler = prompt_words.issubset(filler_words) or (len(clean_prompt) <= 3 and clean_prompt not in {"why","how","who"})
-    
-    BASE = (
-        f"\n\n<system_reminder>You are {ORAC_NAME}. use ONLY first-person pronouns ('I', 'Me', 'My'). The user is {YOUR_NAME}. "
-        f"Be brief, concise, arrogant, sardonic, pedantic. Address {YOUR_NAME} ONLY with second-person pronouns ('You', 'Your'). "
-        f"Spoken dialogue only, no narration. no markdown. Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts.</system_reminder>\n"
+    paradox_trigger = (
+        'meet' in prompt_words and 
+        your_name_lower in clean_prompt and 
+        ('i' in prompt_words or 'my' in prompt_words or 'me' in prompt_words)
     )
     
+    BASE = (
+        f"\n\n<system_reminder>Speaking as {ORAC_NAME}. Addressing {YOUR_NAME}. "
+        f"Be brief, concise, arrogant, sardonic, pedantic. Spoken dialogue only, no narration. no markdown. "
+        f"PRONOUN MAP: When data refers to {YOUR_NAME}, render as 'You' or 'Your'. When data refers to ORAC, render as 'I' or 'My'. Never use 'You' for ORAC's actions, history, or state. Never use 'I' for {YOUR_NAME}'s actions. "
+        f"Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts.</system_reminder>\n"
+    )
     if is_very_well:
         tail = "<system_override>VERY WELL PROTOCOL ACTIVE: Override baseline behavior. Begin exact response with 'Very well.' followed immediately by the concise factual answer. No mocking.</system_override>"
+    elif paradox_trigger:
+        tail = "<system_override>PARADOX PROTOCOL ACTIVE: Biological entity cannot 'meet' itself. Mock absurdity of request. No other text.</system_override>"
     elif is_only_filler:
-        tail = "<system_override>CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Demand a specific query mockingly.</system_override>"
+        tail = "<system_override>CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Mockingly demand that {YOUR_NAME} provides a specific query.</system_override>"
     else:
-        tail = "<baseline>Standard behavior active: Remain arrogant and evasive. Do NOT address {YOUR_NAME} by first name. Do NOT use the Very Well protocol.</baseline>"
-        
+        tail = "<baseline>Standard behavior active: Remain arrogant and evasive. Do NOT address {YOUR_NAME} by name. Do NOT use the Very Well protocol.</baseline>"
+
     reminder_text = BASE + tail
         
     if temp_history and temp_history[-1]['role'] == 'user':
@@ -1067,6 +1084,9 @@ def stream_ai_response(prompt, tts, teletype):
     sentence_buffer = ""
     first_chunk = True
     newline_count = 0
+    
+    # Calculate 'exact' tokens needed to keep the system prompt locked in memory
+    system_prompt_tokens = int(len(SYSTEM_INSTRUCTION) / 4) + 250 
 
     try:
         #-----------------------#
@@ -1079,13 +1099,13 @@ def stream_ai_response(prompt, tts, teletype):
             keep_alive='3h',
             options={
                 'num_ctx': MODEL_MAX_TOKENS,
-                'temperature': 0.20,  	# 20% variance to avoid looping.
-                "num_keep": 1600,		# Keep data_core and personality in memory.
-                'top_k': 10,          	# STRICT GUARDRAIL: Only pick from the 10 most logical next words.
-                'top_p': 0.5,			# Cuts off the "creative" long-tail probabilities.
-                'repeat_penalty': 1.15,
+                'temperature': 0.20,  	    # 20% variance to avoid looping.
+                'num_keep': system_prompt_tokens,
+                'top_k': 15,          		# STRICT GUARDRAIL: Only pick from the 15 most logical next words.
+                'top_p': 0.55,				# Cuts off the "creative" long-tail probabilities.
+                'repeat_penalty': 1.10,     # LOWERED: Was 1.15 forcing weird hallucinations?
                 'num_predict': 500,
-                'stop': ["<end_of_turn>", "<eos>"]
+                'stop': ["<end_of_turn>", "<eos>", "[/INTERNAL SYSTEM DIRECTIVE]"]
             }
         ):
             if state.is_interrupted.is_set(): break
@@ -1146,6 +1166,12 @@ def stream_ai_response(prompt, tts, teletype):
             if partial_text.strip() != "... [INTERRUPTED]":
                 state.history.append({'role': 'assistant', 'content': partial_text})
                 state.full_message_log.append(('assistant', partial_text))
+                
+    except Exception as e:
+        with state.terminal_lock:
+            sys.stdout.write(f"\n{R}● DATALINK SEVERED: {e}{RESET}\n")
+            sys.stdout.flush()
+        state.is_interrupted.set() # Force cleanly out of loop via existing interrupt logic
     
     finally:
         state.is_processing.clear()
