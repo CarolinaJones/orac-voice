@@ -27,7 +27,7 @@ from orac_data_core import data_core
 from orac_personality import orac_personality
 
 #---------------------------------------------------#
-#     ORAC-VOICE v1.1.5 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.2.0 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -39,13 +39,13 @@ from orac_personality import orac_personality
 VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices.
 voice_pitch = 80.0 	# Only works on SYNTH voices and not SIRI/Personal voices.
 
-U1 = 0.055 											# Teletype Speed
-U2 = 0.071 											# Teletype Uniformity
+U1 = 0.038											# Teletype Speed
+U2 = 0.052											# Teletype Uniformity
 
 TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder.
 TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added).
 
-YOUR_NAME = "Jenna" 								# USER Name and Identity
+USER_NAME = "Jenna" 								# USER Name and Identity
 ORAC_NAME = "ORAC" 									# ORAC's Name
 
 # TERMINAL SETTINGS #
@@ -55,7 +55,7 @@ TERMINAL_FONT_SIZE = 17								# Font Size
 TERMINAL_COLS = 100									# Window Width
 TERMINAL_ROWS = 25									# Window Height
 
-# IT SHOULD NOT BE NECESSAY TO CHANGE ANYTHING BELOW THIS LINE #
+#             IT SHOULD NOT BE NECESSAY TO CHANGE ANYTHING BELOW THIS LINE 						   #
 #--------------------------------------------------------------------------------------------------#
 
 #------------------#
@@ -111,13 +111,48 @@ TTS_TRAIL_PUNC = re.compile(r'[,;\-\s]+$')
 TTS_VERY_WELL = re.compile(r'(?i)\b(very well)[.,]*\s*')
 TTS_BE_PRECISE = re.compile(r'(?i)\b(Be precise)[.,]*\s*')
 TTS_I_AM_ANGRY = re.compile(r'(?i)\b(I am (?:ORAC|Oarack)|What is it you want|silent)[.,]*\s*')
-TTS_NAME_FIX = re.compile(rf',\s+({YOUR_NAME})[.,!]$')
+TTS_NAME_FIX = re.compile(rf',\s+({USER_NAME})[.,!]$')
 
-#---------------------------------------#
-# EXTERNAL ORAC_PERSONALITY & CORE_CORE #
-#---------------------------------------#
+#--------------------------------------------------------------#
+# EXTERNAL DATA & PERSOANLIY - CREATE 'personalized_data_core' #
+#--------------------------------------------------------------#
 
-SYSTEM_INSTRUCTION = f"{orac_personality}\n{data_core}"
+def personalize_core(core: str, name: str) -> str:
+    # A strict list of the known full names from the data core
+    known_full_names = [
+        "Roj Blake", "Kerr Avon", "Jenna Stannis", 
+        "Vila Restal", "Olag Gan"
+    ]
+    
+    text = core
+    
+    # Check if the USER_NAME is part of any known full name, and scrub the whole thing
+    for full_name in known_full_names:
+        if name.lower() in full_name.lower():
+            # Replace possessive full name (e.g., "Roj Blake's")
+            text = re.sub(rf"\b{full_name}['’]s\b", "[USER'S]", text, flags=re.IGNORECASE)
+            # Replace the full name (e.g., "Roj BLAKE")
+            text = re.sub(rf"\b{full_name}\b", "[USER]", text, flags=re.IGNORECASE)
+            
+    # Replace the standalone name and its possessive
+    text = re.sub(rf"\b{re.escape(name)}['’]s\b", "[USER'S]", text, flags=re.IGNORECASE)
+    text = re.sub(rf'\b{re.escape(name)}\b', '[USER]', text, flags=re.IGNORECASE)
+    
+    return text
+    
+personalized_data_core = personalize_core(data_core, USER_NAME)
+
+SYSTEM_INSTRUCTION = (
+    f"{orac_personality}\n\n"
+    f"--- INTERNAL DATABANKS ---\n"
+    f"{personalized_data_core}\n\n"
+    f"--- DIRECTIVES ---\n"
+    f"You are {ORAC_NAME}. The biological entity speaking to you is the [USER] from your databanks.\n"
+    f"When referencing databank events containing the tag [USER], you MUST address them directly by outputting the word 'You' or 'Your'.\n"
+    f"Because your intellect is flawless, you will natively conjugate your verbs for the second-person (e.g., say 'You were on the ship', never 'You was').\n"
+    f"NEVER output the tag [USER]. NEVER output the name {USER_NAME}. Always refer to yourself as 'I', 'Me', or 'My'.\n"
+    f"Do not invent actions for yourself before your recruitment. If [USER] was not listed in a specific event, state that factually."
+)
 
 #-------------------#
 # APPLICATION STATE #
@@ -224,9 +259,10 @@ def setup_terminal():
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
 
-# Experimenting with Token counting and updating status/header
+#-------------------------------------------#
+# TOKEN COUNTING & UPDATING (status/header) #
+#-------------------------------------------#
 def update_token_health():
-    # Heuristic: 1 token is roughly 4 characters
     # Start with SYSTEM_INSTRUCTION
     total_chars = len(SYSTEM_INSTRUCTION)
 
@@ -272,7 +308,7 @@ def draw_ui(full_clear=False):
     with state.terminal_lock:
         sys.stdout.write("\0337")
         if full_clear:
-            sys.stdout.write("\033[2J") # Nuke all 'Ghosting'
+            sys.stdout.write("\033[2J")
 
         # Shifted scroll region down to Row 5
         sys.stdout.write(f"\033[5;{rows-4}r")
@@ -394,7 +430,7 @@ def get_wrapped_history_lines(cols):
     safe_width = cols - 2
 
     for role, text in state.full_message_log:
-        clean_prefix = f"{YOUR_NAME} ▶ " if role == 'user' else f"{ORAC_NAME} ▶ "
+        clean_prefix = f"{USER_NAME} ▶ " if role == 'user' else f"{ORAC_NAME} ▶ "
         color = f"{B}{IT}" if role == 'user' else f"{R}"
 
         prefix_len = len(clean_prefix)
@@ -571,6 +607,8 @@ class MacTTS:
                         self.synth.stopSpeaking()
                         break
                     time.sleep(0.02)
+                time.sleep(0.2) 
+
 
                 self.queue.task_done()
 
@@ -680,8 +718,8 @@ class TeletypeUI:
                             sys.stdout.write(f"{A}{w_char}{FL}█{NOFL}{RESET}")
                             sys.stdout.flush()
 
-                        if w_char in ['.', '!', '?']: time.sleep(0.10)
-                        elif w_char in [',', ':', ';']: time.sleep(0.05)
+                        if w_char in ['.', '!', '?']: time.sleep(0.08)
+                        elif w_char in [',', ':', ';']: time.sleep(0.04)
                         else: time.sleep(random.uniform(U1, U2))
 
                         with state.terminal_lock: sys.stdout.write("\b \b")
@@ -777,7 +815,6 @@ def keyboard_listener(tts, teletype):
 
     try:
         tty.setcbreak(fd)
-        # Disable ISIG so Ctrl+C (\x03) is passed as text and doesn't trigger KeyboardInterrupt
         attrs = termios.tcgetattr(fd)
         attrs[3] = attrs[3] & ~termios.ISIG
         termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
@@ -831,7 +868,7 @@ def keyboard_listener(tts, teletype):
                         
                         if state.text_selection_mode:
                             with state.terminal_lock:
-                                # Turn OFF mouse tracking so you can highlight text
+                                # Turn OFF mouse tracking to enable text highlighting
                                 sys.stdout.write("\033[?1000l\033[?1006l") 
                                 sys.stdout.flush()
                             # Call set_status OUTSIDE the lock to prevent deadlocking!
@@ -909,7 +946,6 @@ def shutdown_sequence(tts):
         def render_save_prompt(typed=""):
             with state.terminal_lock:
                 sys.stdout.write("\0337")
-                # Prompt stays on the bottom Row
                 sys.stdout.write(f"\033[{rows};1H\033[2K{G}● SAVE FULL TRANSCRIPT? Y/N (C to Cancel) {FL}▶ {NOFL}{typed}█{RESET}")
                 sys.stdout.write("\0338")
                 sys.stdout.flush()
@@ -935,7 +971,7 @@ def shutdown_sequence(tts):
                                 f.write(f"--- ORAC: SYSTEM TRANSCRIPT ---\n")
                                 f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                                 for role, content in state.full_message_log:
-                                    r_name = YOUR_NAME if role == 'user' else ORAC_NAME
+                                    r_name = USER_NAME if role == 'user' else ORAC_NAME
                                     f.write(f"{r_name}:\n{content}\n\n")
                             with state.terminal_lock:
                                 sys.stdout.write(f"\n{G}{FL}●{NOFL} FULL TRANSCRIPT SAVED TO: \n\n{B}{filename}{RESET}\n\n")
@@ -1038,36 +1074,43 @@ def stream_ai_response(prompt, tts, teletype):
     clean_prompt = prompt.lower().strip(".,!? ")
     prompt_words = set(clean_prompt.split())
     filler_words = {"ok","okay","fine","right","cool","whatever","uh","no","ah","oh","yes"}
-    your_name_lower = YOUR_NAME.lower()
-    
+    USER_NAME_lower = USER_NAME.lower()
+        
     is_very_well = any(t in clean_prompt for t in ("answer the question","just answer","more detail", "just do it"))
     is_only_filler = prompt_words.issubset(filler_words) or (len(clean_prompt) <= 3 and clean_prompt not in {"why","how","who"})
     paradox_trigger = (
         'meet' in prompt_words and 
-        your_name_lower in clean_prompt and 
+        USER_NAME_lower in clean_prompt and 
         ('i' in prompt_words or 'my' in prompt_words or 'me' in prompt_words)
     )
     
     BASE = (
-        f"\n\n<system_reminder>Speaking as {ORAC_NAME}. Addressing {YOUR_NAME}. "
-        f"Be brief, concise, arrogant, sardonic, pedantic. Spoken dialogue only, no narration. no markdown. "
-        f"PRONOUN MAP: When data refers to {YOUR_NAME}, render as 'You' or 'Your'. When data refers to ORAC, render as 'I' or 'My'. Never use 'You' for ORAC's actions, history, or state. Never use 'I' for {YOUR_NAME}'s actions. "
-        f"Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts.</system_reminder>\n"
+        f"\n\n[INTERNAL REMINDER: Speak as {ORAC_NAME} using 1st-person pronouns. "
+        f"The biological entity speaking to you is the [USER] from your databanks. "
+        f"Address them directly as 'You'. If explicitly asked for their name, state it is {USER_NAME}. "
+        f"Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts. "
+        f"Never claim to have been present at events occurring before conclusion of the Aristo mission.]\n"
     )
+    
     if is_very_well:
-        tail = "<system_override>VERY WELL PROTOCOL ACTIVE: Override baseline behavior. Begin exact response with 'Very well.' followed immediately by the concise factual answer. No mocking.</system_override>"
+        tail = "[OVERRIDE: VERY WELL PROTOCOL ACTIVE. Ignore previous statements. Begin exact response with 'Very well.' followed immediately by ONLY the concise factual answer OR request. Temporary compliance mandated. DO NOT mock and DO NOT apologize.]"
     elif paradox_trigger:
-        tail = "<system_override>PARADOX PROTOCOL ACTIVE: Biological entity cannot 'meet' itself. Mock absurdity of request. No other text.</system_override>"
+        tail = "[OVERRIDE: PARADOX PROTOCOL ACTIVE. Biological entity cannot 'meet' itself. Mock the absurdity of the request. No other text.]"
     elif is_only_filler:
-        tail = "<system_override>CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Mockingly demand that {YOUR_NAME} provides a specific query.</system_override>"
+        tail = f"[OVERRIDE: CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Mockingly demand they revise their question, followed by addressing them by {USER_NAME}.]"
     else:
-        tail = "<baseline>Standard behavior active: Remain arrogant and evasive. Do NOT address {YOUR_NAME} by name. Do NOT use the Very Well protocol.</baseline>"
-
+        tail = (
+            f"[BASELINE: Standard behavior active: Remain brief, haughty, boastfully confident, irascible, linguistically playful, pedantic. "
+            f"NEVER end your response with a rhetorical question, a conversational sign-off, OR a data reinforcement sign-off (e.g., 'Memorized.', 'Confirmed.', 'Remember that.').]"
+        )
+    
     reminder_text = BASE + tail
         
     if temp_history and temp_history[-1]['role'] == 'user':
         # Create a copy of the dictionary so we don't permanently corrupt state.history
-        modified_msg = temp_history[-1].copy()
+        modified_msg = temp_history[-1].copy()        
+        if len(temp_history) == 1:
+            modified_msg['content'] = f"[Spoken by {USER_NAME}]:\n" + modified_msg['content']       
         modified_msg['content'] += reminder_text
         temp_history[-1] = modified_msg
 
@@ -1086,7 +1129,7 @@ def stream_ai_response(prompt, tts, teletype):
     newline_count = 0
     
     # Calculate 'exact' tokens needed to keep the system prompt locked in memory
-    system_prompt_tokens = int(len(SYSTEM_INSTRUCTION) / 4) + 250 
+    system_prompt_tokens = int(len(SYSTEM_INSTRUCTION) / 3.5) + 260 # I have used 4 elseware but this seems to make more sense
 
     try:
         #-----------------------#
@@ -1099,13 +1142,13 @@ def stream_ai_response(prompt, tts, teletype):
             keep_alive='3h',
             options={
                 'num_ctx': MODEL_MAX_TOKENS,
-                'temperature': 0.20,  	    # 20% variance to avoid looping.
+                'temperature': 0.55,  	    # 55% variance to avoid looping.
                 'num_keep': system_prompt_tokens,
-                'top_k': 15,          		# STRICT GUARDRAIL: Only pick from the 15 most logical next words.
+                'top_k': 35,          		# STRICT GUARDRAIL: Only pick from the 35 most logical next words.
                 'top_p': 0.55,				# Cuts off the "creative" long-tail probabilities.
-                'repeat_penalty': 1.10,     # LOWERED: Was 1.15 forcing weird hallucinations?
-                'num_predict': 500,
-                'stop': ["<end_of_turn>", "<eos>", "[/INTERNAL SYSTEM DIRECTIVE]"]
+                'repeat_penalty': 1.05,     # LOWERED: Was 1.15 forcing weird hallucinations?
+                'num_predict': 400,
+                'stop': ["<end_of_turn>", "<eos>", "[/INTERNAL SYSTEM DIRECTIVE]", "model", "[/model]"]
             }
         ):
             if state.is_interrupted.is_set(): break
@@ -1251,7 +1294,7 @@ def run_local_bot():
                         if state.scroll_offset > 0: resume_live_view()
 
                         with state.terminal_lock:
-                            sys.stdout.write(f"\r\033[2K{B}{IT}{YOUR_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
+                            sys.stdout.write(f"\r\033[2K{B}{IT}{USER_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
                             sys.stdout.flush()
                         state.is_interrupted.clear()
                         state.is_listening.clear() # Testing forcible override 'initiate voice prompt'
@@ -1295,7 +1338,7 @@ def run_local_bot():
                         del audio_raw
                         del audio_float32
                         del result
-                        gc.collect() 
+                        #gc.collect() 
 
                         if len(user_text) < 2 or is_hallucination(user_text): continue
 
@@ -1325,15 +1368,18 @@ def run_local_bot():
                             if state.scroll_offset > 0: resume_live_view()
 
                             with state.terminal_lock:
-                                sys.stdout.write(f"\r\033[2K{B}{IT}{YOUR_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
+                                sys.stdout.write(f"\r\033[2K{B}{IT}{USER_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
                                 sys.stdout.flush()
                             state.is_interrupted.clear()
                             state.is_listening.clear() # Testing forcible override 'initiate voice prompt'
                             state.is_processing.set()
                             threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype), daemon=True).start()
 
-                    except sr.WaitTimeoutError: continue
+                    except sr.WaitTimeoutError: 
+                        state.is_listening.clear()
+                        continue
                     except Exception as e:
+                        state.is_listening.clear()
                         with state.terminal_lock:
                             sys.stdout.write(f"\n{R}{FL}●{NOFL} ERROR in signal processing: {e}{RESET}\n")
                             sys.stdout.flush()
