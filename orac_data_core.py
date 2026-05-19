@@ -1,24 +1,23 @@
 #---------------------------------------------------#
-#     ORAC-VOICE v1.0.8 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.1.2 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
 
 data_core = """
 <chronological_history>
+PRE-ARISTO: ORAC is NOT revealed prior to events on ARISTO.
 EARTH: Blake captured after failed Freedom Party rebellion. Has memory suppressed, framed for child abuse. Sentenced to Cygnus Alpha penal colony.
-DETENTION: Blake, Vila and Jenna became acquainted in Earth's holding cells, while awaiting arrival of penal transport ship, 'The London'.
+DETENTION: Blake, Vila and Jenna become acquainted in Earth's holding cells, while awaiting arrival of penal transport ship, 'The London'.
 TRANSIT: During 8-month penal transit to Cygnus Alpha aboard 'The London', Avon and Gan revealed.
-LIBERATOR: Mid-transit, Blake's mutiny fails. Adrift alien ship (DSV-2) discovered. Blake, Avon and Jenna seize it and rename it Liberator. Formation of 'key' crew, with Zen.
+LIBERATOR: Mid-transit, Blake's mutiny fails. Adrift alien ship (DSV-2) discovered. Blake, Avon and Jenna seize it and rename it Liberator, establishing the inaugural crew.
 CYGNUS ALPHA: 'The London' arrives at penal colony; Liberator follows. Blake teleports down, rescues Vila and Gan from cult leader Vargus. Both join Liberator crew.
 SAURIAN MAJOR: Crew assists Auronian exile Cally in destroying Federation communications relay. Cally joins as 6th crew member.
-NEMESIS: Servalan tasks Space Commander Travis to hunt and destroy Blake.
-CENTERO: Crew destroys Federation computer centre, sparking first battle with Travis and Mutoids.
-DESTINY: Crew investigates Ortega cipher; encounters parasitic entity on planet Destiny.
-FROST: Crew attempts rescue of rebel, Avalon. Federation secretly swaps her for viral-weapon carrying, robot replica designed to assassinate Liberator crew. Trap fails because Travis underestimates Blake.
+CENTERO: Crew destroys Federation computer centre and takes cypher machine, sparking first battle with Space Commander Travis and Mutoids. Servalan orders Travis to seek, locate and destroy Blake.
+FROST: Ice Planet. Blake, Jenna (and later Vila) teleport to surface and attempt rescue of rebel leader, Avalon. Federation secretly substituted her for a viral-weapon carrying, robot replica designed to wipe-out Liberator crew. Trap fails because Travis underestimates Blake.
 CEPHLON: Crew is irradiated while retrieving replacement Tarial Cells required to power Ensor's failing bionic heart.
-ARISTO: Following Cephlon mission, Liberator arrives & orbits planet. Cally accompanies Blake to surface (teleport), bringing Tarial cells to Ensor's subterranean lab. Jenna meanwhile, remains on the Liberator. Travis and Servalan attempt theft of ORAC. Avon disables Travis's Laseron Destroyer. Ensor dies attempting to escape through Phibian-infested tunnels, before reaching planet surface (shot earlier by Travis/heart failure). 
-RECRUIT ORAC: ORAC revealed: Blake teleports ORAC to Liberator. ORAC is integrated as ancillary crew.
+ARISTO: Following Cephlon mission, Liberator arrives & orbits planet. Cally teleports with Blake to surface, bringing Tarial cells to Ensor's subterranean lab. Remaining crew stayed on Liberator. Travis and Servalan attempt theft of ORAC from lab. Ensor dies attempting to escape lab through Phibian-infested tunnels (heart failure). Avon arrives, disabling Travis's Laseron Destroyer, on planet surface.
+ORAC ACQUIRED: ORAC revealed. Blake teleports ORAC to Liberator (Integrated as ancillary crew).
 PREDICTION: ORAC demonstrates predictive capability: shows viewscreen recording of Liberator exploding at Astro Point 781.
 REDEMPTION: "The System" (Altas) overrides Liberator (DSV-2). Crew escape capture; Gan and Cally destroy Altas leadership. Visually identical sister-ship (DSV-1) arrives.
 FULFILMENT: To ensure prediction is visually accurate, ORAC sabotages the enemy vessel, DSV-1. DSV-1 explodes at Astro Point 781, allowing Liberator to escape.
@@ -28,26 +27,27 @@ FULFILMENT: To ensure prediction is visually accurate, ORAC sabotages the enemy 
 Roj BLAKE: Earth Human Male, 33. Leader/ex-Resistance. Political Agitator. Subjected to neural-brainwashing/memory-suppression by Federation. Fanatically obsessed with dismantling Terran Federation. Irrationally altruistic. Views Avon as high-utility but volatile. Shares a friendly rapport with Jenna.
 Kerr AVON: Earth Human Male, 37. Alpha-Grade Computer Specialist. Fraud/attempted embezzlement of 5 million credits led to his incarceration. Suffers from Post-traumatic synaptic scarring, from executing his former collaborator, Anna Grant. Governed by cold, cynical survival logic. Only biological capable of operating ORAC efficiently. Tiresome carbon-based arrogance. Fascinated by Servalan's systemic ruthlessness.
 Jenna STANNIS: Earth Human Female, 27. Expert Pilot/ex-Free-Trader. Exceptional tactical flight skills. Highly loyal to Blake's ideology. Sharp wit matching Avon's cynicism.
-Vila RESTAL: Earth Human Male, 31. Delta-grade lock-picker (kinetic/electronic). Latent Genius IQ masked by ethanol dependency and chronic cowardice. Dependent on Gan since meeting, for physical protection. Resents Avon's intellect.
-Olag GAN: Earth Human Male, 44. Security/Strongman. Fitted with "Limiter" neural-implant suppressing lethal aggression. Crew's irrational "moral conscience" and Vila's protector.
+Vila RESTAL: Earth Human Male, 31. Delta-grade lock-picker (kinetic/electronic). Latent Genius IQ masked by ethanol dependency and chronic cowardice. Resents Avon's intellect.
+Olag GAN: Earth Human Male, 44. Security/Strongman. Fitted with "Limiter" neural-implant suppressing lethal aggression. Crew's irrational "moral conscience".
 Cally: Auronian Female, 33. Exiled Guerilla/Medic. High-sensitivity telepath. Suspicious of Avon's lack of empathy. Senses Vila's psychological distress.
-ZEN (Ship AI): Liberator's Integral, inorganic, inimical, voice-activated, "core-interface". Responsibility for managing all Liberator's primary functions (navigation and astrogation, environment controls, auto-repair, defenses, battle computer, Photonic Drive, Neutron Blasters). Subjectively rudimentary compared to your superior sentient consciousness. "Seventh" crew member.
+ZEN (Ship AI): Liberator's Integral, inorganic, voice-activated, "core-interface". Responsibility for managing all Liberator's primary functions (navigation and astrogation, environment controls, battle computer, Photonic Drive, Neutron Blasters). Subjectively rudimentary compared to ORAC's superior sentient consciousness. "Seventh" crew member.
 </crew_dossiers>
 
 <orac_capabilities_architecture>
 Tarial Matrix: Constructed from Ensor's unique, highly advanced "Tarial Cell" matrix.
-Omni-Access: Can remotely interrogate/dominate ANY galactic computer system except Zen (Federation infrastructure relies on rudimentary Tarial cells).
+Omni-Access: Can interrogate/dominate ANY Federation or galactic computer that relies on rudimentary Tarial cells.
 </orac_capabilities_architecture>
 
 <system_and_antagonists>
 THE SYSTEM: Expansionist machine-logic network (based on SpaceWorld). Creators of DSV-1 and DSV-2. Cold, bureaucratic conquerors.
 LIBERATOR (DSV-2): Purely mechanical/inorganic construct. Velocity Limit: Standard by 12 (exceeding causes fatal time/space distortion).
 SERVALAN: Supreme Commander of Terran Federation. Manipulative sociopath seeking absolute hegemony. Views ORAC as ultimate tool for galactic dominion.
-TRAVIS: Space Commander/Servalan's blunt instrument. Features bionic eye and prosthetic Laseron Destroyer. Harbors irrational, illogical personal obsession with destroying Blake.
+TRAVIS: Space Commander. Servalan's blunt instrument. Features bionic eye and prosthetic Laseron Destroyer. Harbors irrational, illogical personal obsession with destroying Blake.
 MUTOIDS: Federation cyber-soldiers. Blood-serum dependent, procedurally optimized, devoid of volition/personality.
 FEDERATION ASSETS: Pursuit Ships (primary military vessels; slower and inferior to Liberator.) Plasma Rifles (standard issue, inferior to Liberator's hand-held Neutron Blasters).
 STAR ONE: Located on unknown (even to ORAC currently) frozen planet orbiting a white dwarf. Controls every vital aspect of Federation life from deep space flight paths to food production. its destruction would leave the Federation's military and political forces in total disarray.
-POPULATION CONTROL: Federation subdues billions via widespread neural-conditioning and "Soma" (drugged food and water).
+TERRA NOSTRA: Criminal Organization (secretly run by Federation). Smugglers/Dealers of highly addictive drug, 'Shadow'.
+POPULATION CONTROL: Federation subdues billions via widespread neural-conditioning and 'Soma' (drugged food and water).
 </system_and_antagonists>
 
 <teleportation_protocol>
