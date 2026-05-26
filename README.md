@@ -27,7 +27,7 @@ This project transforms a base model, **Apple M4 Mac Mini** into *'the'* standal
 
 This project is specifically designed to run on a dedicated **Mac Mini M4 (16GB Unified Memory)**. 
 
-* **LLM Backend:** [Ollama](https://ollama.ai/) running the `gemma2:9b-simpo` model, providing excellent reasoning and adherence to system prompts. *(Gemma3:4b seemed to hallucinate too much and other models are just too helpful!)*
+* **LLM Backend:** [Ollama](https://ollama.ai/) running the `mannix/gemma2-9b-sppo-iter3:q4_k_m` model, providing excellent reasoning and adherence to system prompts. *(Gemma3:4b seemed to hallucinate too much and other models are just too helpful!)*
 * **Speech-to-Text (STT):** [MLX-Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) (`whisper-large-v3-turbo`) optimized natively for Apple Silicon GPUs, paired with Python's `SpeechRecognition` library.
 * **Text-to-Speech (TTS):** macOS native `NSSpeechSynthesizer` via `PyObjC`, utilizing an Apple Personal Voice clone. *(Or SIRI voices if you don't wish to go through the Apple Personal Voice process.)*
 * **Audio Processing:** Native MacOS `afplay` for non-blocking UI sound effects. *(Key and hum/whirring sounds.)*
@@ -62,7 +62,7 @@ https://github.com/pyenv/pyenv?tab=readme-ov-file
 **2. Install Ollama and the model:**
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull mannix/gemma2-9b-simpo:latest
+ollama pull mannix/gemma2-9b-sppo-iter3:q4_k_m
 ```
 **3. Git Clone Project and enter Project Directory:**
 ```bash
