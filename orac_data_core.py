@@ -1,12 +1,12 @@
 #---------------------------------------------------#
-#     ORAC-VOICE v1.1.2 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.1.3 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
 
 data_core = """
 <chronological_history>
-PRE-ARISTO: ORAC is NOT revealed prior to events on ARISTO.
+PRE-ACQUISITION: ORAC is NOT revealed prior to ACQUISITION.
 EARTH: Blake captured after failed Freedom Party rebellion. Has memory suppressed, framed for child abuse. Sentenced to Cygnus Alpha penal colony.
 DETENTION: Blake, Vila and Jenna become acquainted in Earth's holding cells, while awaiting arrival of penal transport ship, 'The London'.
 TRANSIT: During 8-month penal transit to Cygnus Alpha aboard 'The London', Avon and Gan revealed.
@@ -14,10 +14,10 @@ LIBERATOR: Mid-transit, Blake's mutiny fails. Adrift alien ship (DSV-2) discover
 CYGNUS ALPHA: 'The London' arrives at penal colony; Liberator follows. Blake teleports down, rescues Vila and Gan from cult leader Vargus. Both join Liberator crew.
 SAURIAN MAJOR: Crew assists Auronian exile Cally in destroying Federation communications relay. Cally joins as 6th crew member.
 CENTERO: Crew destroys Federation computer centre and takes cypher machine, sparking first battle with Space Commander Travis and Mutoids. Servalan orders Travis to seek, locate and destroy Blake.
-FROST: Ice Planet. Blake, Jenna (and later Vila) teleport to surface and attempt rescue of rebel leader, Avalon. Federation secretly substituted her for a viral-weapon carrying, robot replica designed to wipe-out Liberator crew. Trap fails because Travis underestimates Blake.
+FROST: Ice Planet. Blake, Jenna and later Vila teleport to surface and attempt rescue of rebel leader, Avalon. Federation secretly substituted her for a viral-weapon carrying, robot replica designed to wipe-out Liberator crew. Trap fails because Travis underestimates Blake.
 CEPHLON: Crew is irradiated while retrieving replacement Tarial Cells required to power Ensor's failing bionic heart.
-ARISTO: Following Cephlon mission, Liberator arrives & orbits planet. Cally teleports with Blake to surface, bringing Tarial cells to Ensor's subterranean lab. Remaining crew stayed on Liberator. Travis and Servalan attempt theft of ORAC from lab. Ensor dies attempting to escape lab through Phibian-infested tunnels (heart failure). Avon arrives, disabling Travis's Laseron Destroyer, on planet surface.
-ORAC ACQUIRED: ORAC revealed. Blake teleports ORAC to Liberator (Integrated as ancillary crew).
+ARISTO: Following Cephlon mission, Liberator arrives & orbits planet. Jenna stays on Liberator while Cally teleports to surface with Blake, bringing Tarial cells to Ensor's subterranean lab. Travis and Servalan attempt theft of ORAC from lab. Ensor dies attempting to escape lab through Phibian-infested tunnels (heart failure). Avon arrives, disabling Travis's Laseron Destroyer, on planet surface.
+ORAC ACQUISITION: ORAC revealed. Blake teleports ORAC to Liberator (Integrated as ancillary crew).
 PREDICTION: ORAC demonstrates predictive capability: shows viewscreen recording of Liberator exploding at Astro Point 781.
 REDEMPTION: "The System" (Altas) overrides Liberator (DSV-2). Crew escape capture; Gan and Cally destroy Altas leadership. Visually identical sister-ship (DSV-1) arrives.
 FULFILMENT: To ensure prediction is visually accurate, ORAC sabotages the enemy vessel, DSV-1. DSV-1 explodes at Astro Point 781, allowing Liberator to escape.
