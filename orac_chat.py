@@ -28,7 +28,7 @@ from orac_data_core import data_core
 from orac_personality import orac_personality
 
 #==================================================================================================#
-#    						 ORAC-VOICE v1.3.0 (Lore friendly VoiceChat)                           #
+#    						 ORAC-VOICE v1.3.3 (Lore friendly VoiceChat)                          #
 #          						  Copyright © 2026 Caroline Mayne                                  #
 #         						 https://github.com/CarolinaJones/                                 #
 #==================================================================================================#
@@ -60,13 +60,15 @@ TERMINAL_ROWS = 25									# Window Height
 #==================================================================================================#
 
 # MODEL VARIABLES
-
-#OLLAMA_MODEL = 'mannix/gemma2-9b-simpo:latest'			
+		
 OLLAMA_MODEL = 'mannix/gemma2-9b-sppo-iter3:q4_k_m'			
-#OLLAMA_MODEL = 'mannix/gemma2-9b-sppo-iter3:q5_0'						
+#OLLAMA_MODEL = 'mannix/gemma2-9b-sppo-iter3:q5_k_m'		
+#OLLAMA_MODEL = 'gemma4:31b-cloud'						# Cloud based gemma4
+#OLLAMA_MODEL = 'gemma4:e2b-mlx'						# Local gemma4-mlx model
+
 MODEL_MAX_TOKENS = 8192									# MAX TOKENS for STATUS Predict & NUM_CTX
 CHARS_PER_TOKEN = 4.5									# For UI Health Bar estimation
-WHISPER_MODEL = './whisper/whisper-turbo-q4'
+WHISPER_MODEL = './whisper/whisper-turbo-q4'			# Whisper-turbo-q4 is the best compromise
 
 # ANSII PALETTES & CURSORS - SOUNDS
 
@@ -90,7 +92,7 @@ SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet.mp3")
 SPLIT_REGEX = re.compile(r'(?<!\bMr)(?<!\bDr)(?<!\bMrs)(?<!\bMs)(?<!\bCapt)(?<!\bCmdr)(?<!\bGen)(?<!\bProf)[.!?]+[\]}"\’”]?\s+')
 ansi_escape = re.compile(r'\x1b(?:\[[0-9;]*[A-Za-z~]|O[A-Za-z])')
 HALLUCINATION_REGEX = re.compile(r'(thank you|thanks for watching|subscribe|amara\.org|by mooji|subtitles by|\[silence\]|\[music\]|\(sigh\)|^[ \t]*you\.?[ \t]*$)')
-PURGE_CMD = ("re set", "clear history", "New Subject")
+PURGE_CMD = ("re set", "clear history", "new subject") # Changed to lowercase to match user_text.lower()
 SHUTDOWN_CMD = ("shut down", "deactivate")
 
 # PRE-COMPILED REGEX FOR TTS SANITIZATION
@@ -137,7 +139,7 @@ SYSTEM_INSTRUCTION = (
     f"{personalized_data_core}\n\n"
     f"--- DIRECTIVES ---\n"
     f"Speaking as {ORAC_NAME} using 1st-person pronouns ('I', 'me', 'my').\n"
-    f"Addressing the biological entity [USER] referenced in your databanks directly, using 2nd-person pronouns.\n"
+    f"Addressing the biological entity [USER] referenced in your databanks, ONLY using 2nd-person pronouns.\n"
     f"Translating the tag [USER] into 2nd-person pronouns when recounting databank events.\n"
     f"Natively conjugating verbs for the 2nd-person.\n"
     f"Maintaining strict separation between {ORAC_NAME}'s history and [USER]'s history.\n"
@@ -168,6 +170,7 @@ class OracState:
         self.full_message_log = []
         self.scroll_offset = 0
         self.proc_lock = threading.Lock()
+        self.hist_lock = threading.Lock()
 
         self.input_buffer = ""
         self.input_ready = threading.Event()
@@ -178,10 +181,15 @@ class OracState:
         
         self._last_hist_len = -1
         self._cached_token_base = len(SYSTEM_INSTRUCTION)
+        self.total_chars = 0
         
         self.alarm_time_str = None
         self.alarm_trigger_epoch = None
         self.is_alarm_playing = False
+
+        self.cached_ram = " 0.0%"
+        self.term_cols = TERMINAL_COLS
+        self.term_rows = TERMINAL_ROWS
 
 state = OracState()
 
@@ -241,14 +249,23 @@ def setup_terminal():
     except Exception: pass
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
+    
+    cols, rows = shutil.get_terminal_size(fallback=(state.term_cols, state.term_rows))
+    state.term_cols = cols
+    state.term_rows = rows
 
 def update_token_health():
+    if not hasattr(state, 'total_chars'):
+        state.total_chars = state._cached_token_base
+
     if len(state.history) != state._last_hist_len:
-        total_chars = state._cached_token_base
-        total_chars += sum(len(msg['content']) for msg in state.history)
-        total_chars += 600  
-    state.current_tokens = int(total_chars / CHARS_PER_TOKEN)
+        with state.hist_lock:
+            state._last_hist_len = len(state.history)
+            state.total_chars = state._cached_token_base + sum(len(msg['content']) for msg in state.history) + 600
+        
+    state.current_tokens = int(state.total_chars / CHARS_PER_TOKEN)
     percent = state.current_tokens / MODEL_MAX_TOKENS
+    
     if percent < 0.70:
         state.token_status = "NOMINAL"
         state.token_color = G 
@@ -265,7 +282,7 @@ def get_ram_string():
     except Exception: return ""
 
 def set_status(text, color=G):
-    cols, rows = shutil.get_terminal_size()
+    rows = state.term_rows
     with state.terminal_lock:
         sys.stdout.write("\0337")
         sys.stdout.write(f"\033[{rows-2};1H\033[2K{color}{text}{RESET}")
@@ -273,7 +290,7 @@ def set_status(text, color=G):
         sys.stdout.flush()
 
 def draw_ui(full_clear=False):
-    cols, rows = shutil.get_terminal_size()
+    cols, rows = state.term_cols, state.term_rows
     with state.terminal_lock:
         sys.stdout.write("\0337")
         if full_clear: sys.stdout.write("\033[2J")
@@ -292,7 +309,7 @@ def draw_ui(full_clear=False):
         else: noise_str = "---"
         
         alarm_indicator = f"  {DIM}TMR {R}{FL}●{NOFL}{RESET}" if getattr(state, 'alarm_trigger_epoch', None) is not None else ""
-        sys.stdout.write(f"\033[3;1H\033[2K{DIM}TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {get_ram_string().strip()}   NOISE: {noise_str}{RESET}{alarm_indicator}")
+        sys.stdout.write(f"\033[3;1H\033[2K{DIM}TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {state.cached_ram.strip()}   NOISE: {noise_str}{RESET}{alarm_indicator}")
         
         sys.stdout.write(f"\033[{rows-1};1H\033[2K{DIM}{'-'*cols}{RESET}")
         
@@ -319,13 +336,13 @@ def update_header_only():
         else: noise_str = "---"
         
         alarm_indicator = f"  {DIM}TMR {R}{FL}●{NOFL}{RESET}" if getattr(state, 'alarm_trigger_epoch', None) is not None else ""
-        sys.stdout.write(f"\033[3;1H\033[2K{DIM}TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {get_ram_string().strip()}   NOISE: {noise_str}{RESET}{alarm_indicator}")
+        sys.stdout.write(f"\033[3;1H\033[2K{DIM}TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}   MEM: {state.cached_ram.strip()}   NOISE: {noise_str}{RESET}{alarm_indicator}")
 
         sys.stdout.write("\0338")
         sys.stdout.flush()
 
 def render_input_box():
-    cols, rows = shutil.get_terminal_size()
+    cols, rows = state.term_cols, state.term_rows
     max_visible = max(5, cols - 20)
     display_text = "…" + state.input_buffer[-(max_visible - 1):] if len(state.input_buffer) > max_visible else state.input_buffer
 
@@ -356,7 +373,7 @@ def get_wrapped_history_lines(cols):
 
 def resume_live_view():
     state.scroll_offset = 0
-    cols, rows = shutil.get_terminal_size()
+    cols, rows = state.term_cols, state.term_rows
     visible_rows = rows - 8 
     lines = get_wrapped_history_lines(cols)
     display_lines = lines[-visible_rows:] if len(lines) > visible_rows else lines
@@ -373,7 +390,7 @@ def redraw_scroll_region():
         resume_live_view()
         return
 
-    cols, rows = shutil.get_terminal_size()
+    cols, rows = state.term_cols, state.term_rows
     visible_rows = rows - 8 
     lines = get_wrapped_history_lines(cols)
     state.scroll_offset = min(state.scroll_offset, max(0, len(lines) - visible_rows))
@@ -426,7 +443,7 @@ class SoundLooper:
                 if self.stop_event.wait(max(0.1, self.duration - self.overlap)): break
             else:
                 while proc.poll() is None:
-                    if self.stop_event.wait(0.01): break
+                    if self.stop_event.wait(0.1): break
                 if self.stop_event.is_set(): break
 
         for p in procs:
@@ -535,14 +552,12 @@ class TeletypeUI:
         self.thread.start()
 
     def _worker(self):
-        cols, rows = shutil.get_terminal_size()
         current_col = len(ORAC_NAME) + 3 
         word_buffer = ""
 
         while state.running:
             try:
                 char = self.q.get(timeout=0.1)
-
                 if state.is_interrupted.is_set():
                     word_buffer = ""
                     self.q.task_done()
@@ -550,7 +565,6 @@ class TeletypeUI:
 
                 if char == "<START>":
                     self.is_typing.set()
-                    cols, rows = shutil.get_terminal_size()
                     current_col = len(ORAC_NAME) + 3
                     self.lines_printed = 0
                     word_buffer = ""
@@ -560,7 +574,7 @@ class TeletypeUI:
 
                 if char == "<END>":
                     if word_buffer:
-                        if current_col + len(word_buffer) >= (cols - 2):
+                        if current_col + len(word_buffer) >= (state.term_cols - 2):
                             with state.terminal_lock: sys.stdout.write('\r\n')
                             self.lines_printed += 1
                             current_col = 0
@@ -579,8 +593,7 @@ class TeletypeUI:
                     continue
 
                 if char in [' ', '\n', '\r', '\t']:
-                    cols, _ = shutil.get_terminal_size()
-                    if current_col + len(word_buffer) >= (cols - 2):
+                    if current_col + len(word_buffer) >= (state.term_cols - 2):
                         with state.terminal_lock: sys.stdout.write('\r\n')
                         self.lines_printed += 1
                         current_col = 0
@@ -651,6 +664,7 @@ def sanitize_for_tts(text):
     text = TTS_BE_PRECISE.sub(r'\1! ', text)
     text = TTS_I_AM_ANGRY.sub(r'\1! ', text)
     text = TTS_NAME_FIX.sub(r' \1.', text)
+
     return text.strip()
 
 def is_hallucination(text):
@@ -700,35 +714,41 @@ def parse_time_command(text):
 def ui_refresh_worker():
     counter = 0
     while state.running:
+        if counter % 20 == 0:
+            try: state.cached_ram = f" {psutil.virtual_memory().percent}%"
+            except: pass
+
         if state.ui_needs_redraw:
             state.ui_needs_redraw = False
             draw_ui(full_clear=True)
             if state.scroll_offset > 0: redraw_scroll_region()
             else: resume_live_view()   
             render_input_box()       
-            
-            cols, rows = shutil.get_terminal_size()
-            lines = get_wrapped_history_lines(cols)
-            target_row = rows - 4 if state.scroll_offset > 0 else min(rows - 4, 5 + len(lines))
+
+            lines = get_wrapped_history_lines(state.term_cols)
+            target_row = state.term_rows - 4 if state.scroll_offset > 0 else min(state.term_rows - 4, 5 + len(lines))
             with state.terminal_lock:
                 sys.stdout.write(f"\033[{target_row};1H")
                 sys.stdout.flush()
                 
-        elif counter >= 5: 
+        elif counter % 5 == 0: 
             update_header_only()
-            counter = 0
             
         time.sleep(0.5)
         counter += 1
 
 def flag_ui_redraw(signum=None, frame=None):
     state.ui_needs_redraw = True
+    cols, rows = shutil.get_terminal_size(fallback=(state.term_cols, state.term_rows))
+    state.term_cols = cols
+    state.term_rows = rows
 
 signal.signal(signal.SIGWINCH, flag_ui_redraw)
 
 def alarm_worker(trigger_epoch, tts):
     while state.running and getattr(state, 'alarm_trigger_epoch', None) == trigger_epoch:
         if time.time() >= trigger_epoch:
+            state.is_interrupted.clear()
             state.is_alarm_playing = True
             if state.scroll_offset > 0: resume_live_view()
             
@@ -810,7 +830,7 @@ def shutdown_sequence(tts):
     state.is_shutdown.set()
     if state.scroll_offset > 0: resume_live_view()
 
-    cols, rows = shutil.get_terminal_size()
+    cols, rows = state.term_cols, state.term_rows
     set_status(f"● CRITICAL OVERRIDE DETECTED: {FL}INPUT REQUIRED{NOFL}", R)
     play_once(SOUND_QUIT)
     cancel_shutdown = False
@@ -921,10 +941,11 @@ def stream_ai_response(prompt, tts, teletype):
 
     update_token_health()
     while state.current_tokens > (MODEL_MAX_TOKENS * 0.85) and len(state.history) > 2:
-        state.history = state.history[2:]
-        if state.history and state.history[0]['role'] == 'assistant':
-            state.history = state.history[1:]
-        update_token_health()  
+        with state.hist_lock:
+            state.history = state.history[2:]
+            if state.history and state.history[0]['role'] == 'assistant':
+                state.history = state.history[1:]
+        update_token_health()
 
     update_header_only()
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
@@ -968,10 +989,11 @@ def stream_ai_response(prompt, tts, teletype):
     
     BASE = (
         f"\n\n[INTERNAL REMINDER: Speaking as {ORAC_NAME} ('I', 'me', 'my'). "
-        f"Addressing the biological entity [USER] referenced in your databanks directly, using 2nd-person pronouns. "
-        f"ONLY if explicitly asked for their name, state it is {USER_NAME}. NEVER output the text '[USER]'. "
-        f"Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts. {ORAC_NAME} was NOT revealed prior to Aristo. "
-        f"State the time ({current_time} Standard Terran Time) ONLY if asked.{alarm_note}]\n"
+        f"Addressing the biological entity [USER] referenced in your databanks, ONLY using 2nd-person pronouns. "
+        f"ONLY if explicitly asked for their name, state it is {USER_NAME}. "
+        f"Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts. {ORAC_NAME} was NOT revealed prior to ACQUISITION. "
+        f"State the time ({current_time} Standard Terran Time) ONLY if asked.{alarm_note} "
+        f"ALWAYS conceal the tag '[USER]'.]\n"    
     )
        
     if paradox_trigger:
@@ -993,7 +1015,7 @@ def stream_ai_response(prompt, tts, teletype):
         modified_msg['content'] = translated_prompt
         
         if len(temp_history) == 1:
-            modified_msg['content'] = f"[Spoken by [USER]]:\n" + modified_msg['content']       
+            modified_msg['content'] = f"[SUBJECT: USER][PERSPECTIVE: 2nd-Person]\n" + modified_msg['content']    
         modified_msg['content'] += reminder_text
         temp_history[-1] = modified_msg
 
@@ -1019,13 +1041,13 @@ def stream_ai_response(prompt, tts, teletype):
             keep_alive='3h',
             options={
                 'num_ctx': MODEL_MAX_TOKENS,
-                'temperature': 0.68,  	    
+                'temperature': 0.68,
+                'top_p': 0.70,
+                'top_k': 35,
+                'repeat_penalty': 1.05,
+                'repeat_last_n': 96,
                 'num_keep': system_prompt_tokens,
                 'num_batch': 512,
-                'top_k': 35,          		
-                'top_p': 0.70,				
-                'repeat_penalty': 1.05,     
-                'repeat_last_n': 96,
                 'num_predict': 400,
                 'stop': ["<end_of_turn>", "<eos>", "[/INTERNAL SYSTEM DIRECTIVE]", "model", "[/model]"]
             }
@@ -1230,7 +1252,11 @@ def run_local_bot():
                     if state.input_ready.is_set():
                         if bot_busy:
                             trigger_barge_in(tts, teletype)
-                            while state.is_processing.is_set(): 
+                            start_wait = time.time()
+                            while state.is_processing.is_set():
+                                if time.time() - start_wait > 2.0:
+                                    state.is_processing.clear()
+                                    break
                                 time.sleep(0.05)
 
                         user_text = state.submitted_text
@@ -1249,11 +1275,17 @@ def run_local_bot():
                                 sys.stdout.flush()
                             set_status("● MEMORY PURGED", R)
                             
+                            state.is_interrupted.clear()
+
                             processing_sound.start()
                             play_once(SOUND_COMPUTE_START)
                             state.is_processing.set()
                             time.sleep(0.7)
                             tts.say("   Very well. State your enquiry.")
+                            
+                            while not tts.queue.empty() or getattr(tts.synth, 'isSpeaking', lambda: False)():
+                                time.sleep(0.1)
+                                
                             time.sleep(0.5)
                             state.is_processing.clear()
                             continue
@@ -1328,11 +1360,18 @@ def run_local_bot():
                                 sys.stdout.write(f"\n●{R} LOGIC ARRAYS RESET{RESET}\n\n")
                                 sys.stdout.flush()
                             set_status("● MEMORY PURGED", R)
+                            
+                            state.is_interrupted.clear()
+                            
                             processing_sound.start()
                             play_once(SOUND_COMPUTE_START)
                             state.is_processing.set()
                             time.sleep(0.7)
                             tts.say("   Very well. State your enquiry.")
+                            
+                            while not tts.queue.empty() or getattr(tts.synth, 'isSpeaking', lambda: False)():
+                                time.sleep(0.1)
+                                
                             time.sleep(0.5)
                             state.is_processing.clear()
                             continue
