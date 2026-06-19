@@ -28,7 +28,7 @@ from orac_data_core import data_core
 from orac_personality import orac_personality
 
 #==================================================================================================#
-#    						 ORAC-VOICE v1.3.3 (Lore friendly VoiceChat)                          #
+#    						 ORAC-VOICE v1.3.4 (Lore friendly VoiceChat)                           #
 #          						  Copyright © 2026 Caroline Mayne                                  #
 #         						 https://github.com/CarolinaJones/                                 #
 #==================================================================================================#
@@ -61,7 +61,7 @@ TERMINAL_ROWS = 25									# Window Height
 
 # MODEL VARIABLES
 		
-OLLAMA_MODEL = 'mannix/gemma2-9b-sppo-iter3:q4_k_m'			
+OLLAMA_MODEL = 'mannix/gemma2-9b-sppo-iter3:q4_k_m'		# Seems to work best for ORAC: gemma2-9b-sppo-iter3:q4_k_m
 #OLLAMA_MODEL = 'mannix/gemma2-9b-sppo-iter3:q5_k_m'		
 #OLLAMA_MODEL = 'gemma4:31b-cloud'						# Cloud based gemma4
 #OLLAMA_MODEL = 'gemma4:e2b-mlx'						# Local gemma4-mlx model
@@ -92,7 +92,7 @@ SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet.mp3")
 SPLIT_REGEX = re.compile(r'(?<!\bMr)(?<!\bDr)(?<!\bMrs)(?<!\bMs)(?<!\bCapt)(?<!\bCmdr)(?<!\bGen)(?<!\bProf)[.!?]+[\]}"\’”]?\s+')
 ansi_escape = re.compile(r'\x1b(?:\[[0-9;]*[A-Za-z~]|O[A-Za-z])')
 HALLUCINATION_REGEX = re.compile(r'(thank you|thanks for watching|subscribe|amara\.org|by mooji|subtitles by|\[silence\]|\[music\]|\(sigh\)|^[ \t]*you\.?[ \t]*$)')
-PURGE_CMD = ("re set", "clear history", "new subject") # Changed to lowercase to match user_text.lower()
+PURGE_CMD = ("re set", "clear history", "new subject")
 SHUTDOWN_CMD = ("shut down", "deactivate")
 
 # PRE-COMPILED REGEX FOR TTS SANITIZATION
@@ -432,7 +432,7 @@ class SoundLooper:
     def _loop(self):
         procs = []
         while not self.stop_event.is_set():
-            proc = subprocess.Popen(['afplay', self.sound_path], stderr=subprocess.DEVNULL)
+            proc = subprocess.Popen(['afplay', self.sound_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             procs.append(proc)
             with state.proc_lock:
                 state.active_procs.append(proc)
@@ -993,7 +993,7 @@ def stream_ai_response(prompt, tts, teletype):
         f"ONLY if explicitly asked for their name, state it is {USER_NAME}. "
         f"Strictly adhere to CHRONOLOGICAL HISTORY. Do NOT invent facts. {ORAC_NAME} was NOT revealed prior to ACQUISITION. "
         f"State the time ({current_time} Standard Terran Time) ONLY if asked.{alarm_note} "
-        f"ALWAYS conceal the tag '[USER]'.]\n"    
+        f"NEVER speak the tag, '[USER]'.]\n"    
     )
        
     if paradox_trigger:
@@ -1049,7 +1049,7 @@ def stream_ai_response(prompt, tts, teletype):
                 'num_keep': system_prompt_tokens,
                 'num_batch': 512,
                 'num_predict': 400,
-                'stop': ["<end_of_turn>", "<eos>", "[/INTERNAL SYSTEM DIRECTIVE]", "model", "[/model]"]
+                'stop': ["<start_of_turn>", "<end_of_turn>", "<eos>", "[/INTERNAL SYSTEM DIRECTIVE]", "model", "[/model]"]
             }
         ):
             if state.is_interrupted.is_set(): break
