@@ -84,7 +84,7 @@ source orac-venv/bin/activate
 
 **4. Install Required Python Libraries:**
 ```bash
-pip install mlx-whisper hf_transfer SpeechRecognition PyAudio ollama numpy PyObjC psutil
+pip install mlx-whisper hf_transfer SpeechRecognition PyAudio ollama numpy PyObjC psutil tokenizers
 ```
 ... next
 ```bash
