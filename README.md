@@ -92,7 +92,7 @@ pip install mlx-whisper hf_transfer SpeechRecognition PyAudio ollama numpy PyObj
 ... next
 ```bash
 curl -LsSf https://hf.co/cli/install.sh | bash
-hf download mlx-community/whisper-large-v3-turbo-q4 --local-dir ./whisper/whisper-large-v3-turbo
+hf download mlx-community/whisper-large-v3-turbo-q4 --local-dir ./whisper/whisper-turbo-q4
 ```
 
 **5. 'Hack' to allow Terminal to use Apple Personal Voice:**
