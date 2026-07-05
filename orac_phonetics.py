@@ -1,5 +1,5 @@
 #---------------------------------------------------#
-#     ORAC-VOICE v1.0.3 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.0.4 (Lore friendly VoiceChat)	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -16,7 +16,7 @@ _raw_corrections = {
     # === Blake's 7 Specifics ===
     r"\bAI\b": "Artificial Intelligence",
     r"\bAvon\b": "Avon",
-    r"\bDSV-1\b": "D. S. Vee ONE", r"\bDSV-2\b": "D. S. Vee TWO",
+    r"\bDSV-1\b": "d-s-v--won", r"\bDSV-2\b": "d-s-v--toow",
     r"\bGan\b": "Gann",
     r"\bGrant\b": "Grarnt", r"\bgranting\b": "grarnting",
     r"\bLaseron\b": "laze'ron", r"\bLasters\b": "blarsters",
@@ -41,8 +41,8 @@ _raw_corrections = {
     r"\bimplants\b": "implarnts",
     r"\bprocess\b": "proe''cess", r"\bprocesses\b": "proe''cesses", r"\bprocessing\b": "proe'cesssing", r"\bprocessors\b": "proe'cessors",
     r"\bprogress\b": "proe'gress",
-    r"\bstatus\b": "staytus",
-    r"\bsurpasses\b": "sur'parsses", r"\bsurpassing\b": "surr-parssing", r"\bsurpassed\b": "sur'parssed",
+    r"\bstatus\b": "staytus", r"\bstate\b": "stay't",
+    r"\bsurpasses\b": "sur'parsses", r"\bsurpassing\b": "sur-parssing", r"\bsurpassed\b": "sur'parssed", r"\bsurpass\b": "ser'parss",
     r"\btransmitter\b": "transmit'a", 
     r"\bweaponize\b": "wepponise",
 
@@ -60,11 +60,12 @@ _raw_corrections = {
     r"\bchant\b": "charnt",
     r"\bclass\b": "clarss", 
     r"\bclasp\b": "klarsp", r"\bclasped\b": "klarsped",
-    r"\bcommand\b": "cuh-marnd", r"\bcommander\b": "cuh-marnder", r"\bcommanded\b": "cuh-marnded",
+    r"\bcommand\b": "co'marnd", r"\bcommander\b": "co'marnder", r"\bcommanded\b": "co'marnded",
     r"\bcontrast\b": "contrarst", r"\bcontrasting\b": "contrarsting",
     r"\bcraft\b": "krarft", r"\bcrafted\b": "krarfted", r"\bcrafting\b": "krarfting", r"\bcraftstman\b": "crarftsman",
     r"\bdance\b": "darnce",
     r"\bdemand\b": "d'marnd", r"\bdemanding\b": "d'marnding", r"\bdemands\b": "d'marnds", r"\bdemanded\b": "d'marnded",
+    r"\bdisaster\b": "dizarster",
     r"\benhance\b": "enharnse", r"\benhanced\b": "enharnsed", r"\benhancing\b": "enharnsing", r"\benhancements\b": "enharncements",
     r"\bexample\b": "exarmple", r"\bexamples\b": "exarmples",
     r"\bfast\b": "farst", r"\bfaster\b": "farster", r"\bfastest\b": "farstest",
@@ -76,8 +77,8 @@ _raw_corrections = {
     r"\bimplant\b": "implarnt", r"\bneural-implant\b": "nu'ral im'plarnt", r"\bimplanted\b": "implarnted",
     r"\blast\b": "larst", r"\blasted\b": "larsted", r"\blasting\b": "larsting", r"\blastly\b": "larstly",
     r"\blaugh\b": "larf", r"\blaughing\b": "larfing", r"\blaughter\b": "larf-tah",
-    r"\bmask\b": "marsk", r"\bmasked\b": "marsked", r"\bmasking\b": "marsking",
-    r"\bmaster\b": "marster", r"\bmastery\b": "marstery",
+    r"\bmask\b": "marsk", r"\bmasks\b": "marsks", r"\bmasked\b": "marsked", r"\bmasking\b": "marsking",
+    r"\bmaster\b": "marster", r"\bmastery\b": "marstery", r"\bmasterpiece\b": "marsterpiece",
     r"\bnasty\b": "narsty",
     r"\bpass\b": "parss", r"\bpassable\b": "parssable", r"\bpassed\b": "parssed",
     r"\bpast\b": "parst", r"\bpaths\b": "parths", r"\bpathways\b": "parth-ways",
@@ -89,17 +90,18 @@ _raw_corrections = {
     r"\bstance\b": "starnce",
     r"\btakeover\b": "tayk-over",
     r"\btask\b": "tarsk", r"\btasked\b": "tarsked", r"\btasks\b": "tarsks", r"\btasking\b": "tarsking",
-    r"\bvast\b": "varst", r"\bvastly\b": "varstly",
+    r"\bvast\b": "varst", r"\bvastly\b": "varstly", r"\bvastness\b": "varstness",
 
     # === General British Phonetics ===
     r"\badvancement\b": "advarncement", r"\badvantage\b": "ad'varntage",
     r"\baluminum\b": "al-yoo-min'ee'um",
-    r"\banti\b": "an-tee", r"\articulate\b": "artic-ul'ate",
+    r"\banti\b": "an-tee", r"\barticulate\b": "artic'ulayt",
     r"\bconstruct\b": "conn-struct",
-    r"\bexile\b": "ex'ile", r"\bexiled\b": "exx'iled",
+    r"\bexile\b": "ex'ile", r"\bexiled\b": "ex'ile'd", r"\bself-exiled\b": "self-ex'ile'ed",
     r"\belaborate\b": "elabor'rate",
     r"\bflawed\b": "floored",
     r"\bfutile\b": "few-tile", r"\bhostile\b": "hos-tile",
+    r"\blaboratory\b": "lab'ora'tree",
     r"\bleisure\b": "lezh'yah",
     r"\bmulti\b": "mul-tee",
     r"\bonly\b": "own-lee",
@@ -108,12 +110,13 @@ _raw_corrections = {
     r"\broute\b": "root",
     r"\bsatisifed\b": "satisfied",
     r"\bschedule\b": "shed-yool",
+    r"\btrader\b": "tray'dah",
     r"\btraverse\b": "tre'verss", r"\btraverses\b": "trah'verss'es", r"\btraversing\b": "tre'verssing",
     r"\bvia\b": "vy'ah",
     r"\byour\b": "yor",
         
     # === ORAC Attitude & High Status ===
-    r"\berror\b": "air-rah",
+    r"\berror\b": "air'rer",
     r"\bfutility\b": "futilit'ee",
     r"\billogical\b": "ill'loji'kol",
     r"\bI've\b": "I have", r"\bI'll\b": "I will",
