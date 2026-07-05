@@ -1446,7 +1446,7 @@ def run_local_bot():
                 state.noise_floor = recognizer.energy_threshold
                 update_header_only() 
                 with state.terminal_lock:
-                    sys.stdout.write(f"● {R}NOISE FLOOR CALIBRATED...{RESET}\n")
+                    sys.stdout.write(f"● {R}NOISE FLOOR: CALIBRATED{RESET}\n")
                     sys.stdout.write(f"● {R}TOKENIZATION {tokenizer_mode}: {SYS_TOKENS_LEN}{RESET}\n\n")
                     sys.stdout.flush()
 
