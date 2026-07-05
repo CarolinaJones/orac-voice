@@ -59,6 +59,7 @@ TRANSCRIPT_DIR = ''			                        # Set location. Default is within 
 TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added).
 
 # TERMINAL SETTINGS #
+
 TERMINAL_PROFILE = "Homebrew"						# Terminal Profile
 TERMINAL_FONT = "Monoco"							# Font Name
 TERMINAL_FONT_SIZE = 18								# Font Size
@@ -1445,7 +1446,7 @@ def run_local_bot():
                 state.noise_floor = recognizer.energy_threshold
                 update_header_only() 
                 with state.terminal_lock:
-                    sys.stdout.write(f"● {R}NOISE FLOOR CALIBRATED: {recognizer.energy_threshold:.2f}{RESET}\n")
+                    sys.stdout.write(f"● {R}NOISE FLOOR CALIBRATED...{RESET}\n")
                     sys.stdout.write(f"● {R}TOKENIZATION {tokenizer_mode}: {SYS_TOKENS_LEN}{RESET}\n\n")
                     sys.stdout.flush()
 
@@ -1526,6 +1527,8 @@ def run_local_bot():
 
                     if needs_prompt:
                         set_status("● Adapting to ambient noise...", DIM)
+                        time.sleep(0.4)
+                        
                         recognizer.adjust_for_ambient_noise(source, duration=0.3)
                         recognizer.energy_threshold += 150
                         state.noise_floor = recognizer.energy_threshold
