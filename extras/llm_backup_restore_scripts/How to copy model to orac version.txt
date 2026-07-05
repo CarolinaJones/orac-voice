@@ -1,0 +1,4 @@
+How to copy a model to another, i.e snaphotting of an orac version wihich can then be backed up with the backup/retore scrips.
+
+
+ollama cp gemma4:12b-mlx gemma4:12b-mlx-orac
