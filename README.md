@@ -1,4 +1,4 @@
-# ORAC: 'In-Universe' AI Voice & Terminal Chat V2 WIP
+# ORAC: 'In-Universe' AI Voice & Terminal Chat V2
 
 
 https://github.com/user-attachments/assets/4facb2c3-2e08-482a-b78a-a84be58301b2
