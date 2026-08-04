@@ -1,4 +1,4 @@
-# ORAC: 'In-Universe' AI Voice & Terminal Chat
+# ORAC: 'In-Universe' AI Voice & Terminal Chat V2 WIP
 
 
 https://github.com/user-attachments/assets/4facb2c3-2e08-482a-b78a-a84be58301b2
@@ -22,15 +22,18 @@ This project transforms a base model, **Apple M4 Mac Mini** into *'the'* standal
 * **Operating Sounds:** ORAC remains silent until you speak, which initiates the familiar 'key insertion' sound, a continuous 'hum/whirring' sound and finally when ORAC stops speak, the 'key removal' sound.
 * **Teletype UI:** Custom ANSI terminal interface featuring live token tracking, memory monitoring, dynamic status lines, and scrolling history. (Independent control of teletype and voice speed.)
 * **Custom Phonetics Engine:** A dedicated regex pipeline ensures ORAC pronounces the terminology (e.g., *Servalan, Mutoids, DSV-2*) with an appropriate RP accent.
+* **Debug Mode:** OPT+D outputs to screen the Speech To Text (STT) and Time to First Token (TTFT) times. (Typically ~1 sec STT and between 0.7 - 2 second TTFT.
+* **Mute Mic:** OPT+M allows toggling microphohe muting. (With visible indication.)
+* **Text Mode:** OPT+T allows to scroll back and copy text to clipboard. (With visible indication.)
 
 ## Tech Stack & Hardware
 
 This project is specifically designed to run on a dedicated **Mac Mini M4 (16GB Unified Memory)**. 
 
-* **LLM Backend:** [Ollama](https://ollama.ai/) running the `mannix/gemma2-9b-sppo-iter3:q4_k_m` model, providing excellent reasoning and adherence to system prompts. *(Gemma3:4b seemed to hallucinate too much and other models are just too helpful!)*
-* **Speech-to-Text (STT):** [MLX-Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) (`whisper-large-v3-turbo`) optimized natively for Apple Silicon GPUs, paired with Python's `SpeechRecognition` library.
-* **Text-to-Speech (TTS):** macOS native `NSSpeechSynthesizer` via `PyObjC`, utilizing an Apple Personal Voice clone. *(Or SIRI voices if you don't wish to go through the Apple Personal Voice process.)*
-* **Audio Processing:** Native MacOS `afplay` for non-blocking UI sound effects. *(Key and hum/whirring sounds.)*
+* **LLM Backend:** [Ollama](https://ollama.ai/) running the `gemma4:12b-mlx` model, providing excellent reasoning and adherence to system prompts. *(V2 WIP code has been revised to work optimally with gemma4 LLM)*
+* **Speech-to-Text (STT):** [MLX-Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) (`whisper-turbo-q4`) optimized natively for Apple Silicon GPUs, paired with Python's `SpeechRecognition` library.
+* **Text-to-Speech (TTS):** macOS native `NSSpeechSynthesizer`, utilizing an Apple Personal Voice clone. *(Or SIRI voices if you don't wish to go through the Apple Personal Voice process.)*
+* **Audio Processing:** Native MacOS `NSSound` for non-blocking UI sound effects. *(Key and hum/whirring sounds.)*
 
 ## Project Structure
 
@@ -62,7 +65,7 @@ https://github.com/pyenv/pyenv?tab=readme-ov-file
 **2. Install Ollama and the model:**
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull mannix/gemma2-9b-sppo-iter3:q4_k_m
+ollama pull gemma4:12b-mlx
 ```
 **3. Git Clone Project and enter Project Directory:**
 ```bash
@@ -84,18 +87,13 @@ source orac-venv/bin/activate
 
 **4. Install Required Python Libraries:**
 ```bash
-pip install mlx-whisper hf_transfer SpeechRecognition PyAudio ollama numpy PyObjC psutil tokenizers
+pip install mlx-whisper hf_transfer SpeechRecognition PyAudio ollama numpy PyObjC psutil tokenizers requests
 ```
 ... next
 ```bash
 curl -LsSf https://hf.co/cli/install.sh | bash
-hf download mlx-community/whisper-large-v3-turbo --local-dir ./whisper/whisper-large-v3-turbo
-```
-You may wish to try this model as a smaller alternative:
-```bash
 hf download mlx-community/whisper-large-v3-turbo-q4 --local-dir ./whisper/whisper-turbo-q4
 ```
-*(Rememeber to udate the `WHISPER_MODEL =` in orac_chat.py if using this model.)*
 
 **5. 'Hack' to allow Terminal to use Apple Personal Voice:**
 
@@ -131,8 +129,8 @@ open 'orac_chat.py' in an editor, such as BBEdit and change these variables **(O
 `VOICE = ""` 	# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices.
 `voice_pitch = 80.0` 	# Only works on SYNTH voices and not SIRI/Personal voices.
 
-`U1 = 0.06`  (Teletype Speed)
-`U2 = 0.071` (Teletype Uniformity)
+`U1 = 0.038`  (Teletype Speed)
+`U2 = 0.052` (Teletype Uniformity)
 
 `TRANSCRIPT_DIR = /Users/Caroline/Desktop/` (A Directory called transcripts will be created.)
 TR = "ORAC_Transcript_CM" # Transcript Name Prefix (Date will be added).
