@@ -34,8 +34,9 @@ from orac_phonetics import orac_phonetics
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 #==================================================================================================#
-#    					     ORAC-VOICE v1.4.6 (Lore friendly VoiceChat)                           #
+#    					     ORAC-VOICE v1.4.9 (Lore friendly VoiceChat)                           #
 #                                     gemma4:12b-mlx Optimized                                     #
 #          						  Copyright © 2026 Caroline Mayne                                  #
 #         						 https://github.com/CarolinaJones/                                 #
@@ -48,15 +49,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_NAME = "Jenna" 								# USER Name and Identity
 ORAC_NAME = "ORAC"									# ORAC's Name
 
-VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices.
-voice_pitch = 80.0 	# Only works on SYNTH voices and not SIRI/Personal voices.
-S_RATE = 180		# Synth Speech Rate
+VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices
+voice_pitch = 72 	# Only works on SYNTH voices and not SIRI/Personal voices
+S_RATE = 182		# Synth Speech Rate
 
 U1 = 0.038											# Teletype Speed
-U2 = 0.052											# Teletype Uniformity
+U2 = 0.042											# Teletype Uniformity
 
-TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder.
-TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added).
+TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder
+TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added)
 
 # TERMINAL SETTINGS #
 
@@ -72,7 +73,8 @@ TERMINAL_ROWS = 25									# Window Height
 		
 OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
 #OLLAMA_MODEL = 'gemma4:31b-cloud'					# Cloud based gemma4
-MODEL_MAX_TOKENS = 8192								# MAX TOKENS for STATUS Predict & NUM_CTX
+
+MODEL_MAX_TOKENS = 10240							# MAX TOKENS for STATUS Predict & NUM_CTX
 CHARS_PER_TOKEN = 4.18								# For UI Health Bar estimation fallback
 RAM_CHECK_INTERVAL = 10.0							# Check RAM usage for Header
 HEADER_UPDATE_INTERVAL = 5.0						# Update Header Interval
@@ -89,11 +91,17 @@ SOUND_READY = os.path.join(BASE_DIR, "resources/sounds/sub_48k.wav")
 SOUND_QUIT = os.path.join(BASE_DIR, "resources/sounds/funk_48k.wav")
 SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet_48k.wav")
 
-# ANSII PALETTES & CURSORS #
+# ANSII PALETTES & CURSORS & KEY 'MODE' DETECTS #
 
 G, A, R, B = "\033[38;5;46m", "\033[38;5;214m", "\033[38;5;196m", "\033[1;37m"
 FL, NOFL, DIM, RESET = "\033[5m", "\033[25m", "\033[2m", "\033[0m"
 IT, NOIT = "\x1B[3m","\x1B[23m"
+
+MODE_KEYS = {
+    'dagger': ['†', '\u2020', '\x1bt', '\x1bT'],  # Option+T (Literal, Unicode, or Esc+t)
+    'mu':     ['µ', '\u00b5', '\x1bm', '\x1bM'],  # Option+M (Literal, Unicode, or Esc+m)
+    'delta':  ['∂', '\u2202', '\x1bd', '\x1bD']   # Option+D (Literal, Unicode, or Esc+d)
+}
 
 # GLOBAL OPTIMIZATIONS #
 
@@ -263,8 +271,11 @@ def cleanup_processes():
         sys.stdout.write("\033[r\033[0m\033[2J\033[H\033[?25h\n") 	
         sys.stdout.flush()
     except: pass
-    if 'processing_sound' in globals() and processing_sound.is_running():
-        processing_sound.stop()
+    
+    try:
+        if 'processing_sound' in globals() and processing_sound.is_running():
+            processing_sound.stop()
+    except Exception: pass
 
     try:
             requests.post("http://localhost:11434/api/generate", 
@@ -339,10 +350,10 @@ def update_token_health():
 
     percent = state.current_tokens / MODEL_MAX_TOKENS if MODEL_MAX_TOKENS > 0 else 0.0
     
-    if percent < 0.70:
+    if percent < 0.75:
         state.token_status = "NOMINAL"
         state.token_color = G 
-    elif percent < 0.80:
+    elif percent < 0.85:
         state.token_status = "WARNING: SUB-OPTIMAL"
         state.token_color = A 
     else:
@@ -814,21 +825,28 @@ def parse_time_command(text):
         "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
         "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
         "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30,
-        "forty": 40, "fifty": 50, "sixty": 60, "half an": 30
+        "forty": 40, "fifty": 50, "sixty": 60
     }
     
-    t_match = re.search(r'timer for (a|an|half an|\d+|[a-z]+)\s*(sec|min|hour)', clean_text)
+    t_match = re.search(r'(?:set\s+(?:a|an)\s+)?timer for (a|an|half an|\d+|[a-z]+)\s*(sec|min|hour)', clean_text)
     if t_match:
         val_str = t_match.group(1)
         unit = t_match.group(2)
-        val = int(val_str) if val_str.isdigit() else word_to_num.get(val_str, 0)
+    
+        if val_str == "half an":
+            val = 0.5
+        elif val_str.isdigit():
+            val = int(val_str)
+        else:
+            val = word_to_num.get(val_str, 0)
+
         if val > 0:
             mult = 1
             if 'min' in unit: mult = 60
             elif 'hour' in unit: mult = 3600
             return time.time() + (val * mult), f"{val} {unit}s"
             
-    a_match = re.search(r'alarm for (\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?', clean_text)
+    a_match = re.search(r'(?:set\s+(?:a|an)\s+)?alarm for (\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?', clean_text)
     if a_match:
         hr = int(a_match.group(1))
         mins = int(a_match.group(2)) if a_match.group(2) else 0
@@ -836,9 +854,12 @@ def parse_time_command(text):
         if mer == 'pm' and hr < 12: hr += 12
         if mer == 'am' and hr == 12: hr = 0
         now = datetime.now()
-        target = now.replace(hour=hr, minute=mins, second=0, microsecond=0)
-        if target <= now: target = target.replace(day=now.day + 1)
-        return target.timestamp(), target.strftime('%H:%M')
+        try:
+            target = now.replace(hour=hr, minute=mins, second=0, microsecond=0)
+            if target <= now: target = target.replace(day=now.day + 1)
+            return target.timestamp(), target.strftime('%H:%M')
+        except ValueError:
+            return None, None
         
     if "cancel alarm" in clean_text or "cancel timer" in clean_text:
         return -1, None
@@ -926,6 +947,79 @@ def alarm_worker(trigger_epoch, tts):
             play_orac_fx("s_ready")
             break
         time.sleep(1)
+
+#==================================================================================================#
+#     								 CONTEXT COMPACTION ENGINE      	                           #
+#==================================================================================================#
+
+def dry_run_pruning(history, target_tokens, token_base, tokenizer, char_ratio):
+    """Simulates conversational pruning in matched pairs to locate the target index boundary."""
+    temp_hist = list(history)
+    pruned_messages = []
+    
+    while len(temp_hist) > 2:
+        tokenized_successfully = False
+        if tokenizer is not None:
+            try:
+                history_tokens = sum(len(tokenizer.encode(msg['content']).ids) + 5 for msg in temp_hist)
+                tokenized_successfully = True
+            except Exception:
+                pass
+
+        if not tokenized_successfully:
+            history_chars = sum(len(msg['content']) for msg in temp_hist)
+            history_tokens = int(history_chars / char_ratio) + (len(temp_hist) * 5)
+            
+        current_est = token_base + history_tokens
+        if current_est <= target_tokens:
+            break
+            
+        p1 = temp_hist.pop(0)
+        pruned_messages.append(p1)
+        if temp_hist and temp_hist[0]['role'] == 'assistant':
+            p2 = temp_hist.pop(0)
+            pruned_messages.append(p2)
+            
+    return pruned_messages, temp_hist
+
+def generate_compaction_summary(pruned_msgs):
+    """Executes an ultra-fast, non-streaming summary of pruned conversational assets."""
+    if not pruned_msgs:
+        return ""
+    
+    formatted_dialogue = []
+    for msg in pruned_msgs:
+        role_label = USER_NAME if msg['role'] == 'user' else ORAC_NAME
+        content = msg['content']
+        if "[SYSTEM NOTE:" in content or "[OVERRIDE:" in content:
+            continue
+        formatted_dialogue.append(f"{role_label}: {content}")
+        
+    dialogue_text = "\n".join(formatted_dialogue)
+    
+    summary_prompt = (
+        f"You are the internal compression routine of the quantum computer ORAC.\n"
+        f"Analyze the following preceding dialogue between the biological entity [USER] and {ORAC_NAME}.\n"
+        f"Compile a highly dense, 1-2 sentence chronological summary of the core facts, decisions, and outcomes.\n"
+        f"Write from an objective, analytical perspective. Do NOT use polite framing or introductory fluff.\n\n"
+        f"DIALOGUE TO COMPRESS:\n{dialogue_text}\n\n"
+        f"COMPRESSED TELEMETRY SUMMARY:"
+    )
+    
+    try:
+        response = chat(
+            model=OLLAMA_MODEL,
+            messages=[{'role': 'user', 'content': summary_prompt}],
+            options={
+                'temperature': 0.3,
+                'top_p': 0.9,
+                'num_predict': 120,
+                'stop': ['\n']
+            }
+        )
+        return response['message']['content'].strip()
+    except Exception:
+        return "Earlier transaction arrays optimized. Core telemetry preserved."
 
 #==================================================================================================#
 #     								 CORE APPLICATION LOGIC      	                               #
@@ -1118,6 +1212,8 @@ def stream_ai_response(prompt, tts, teletype):
         state.alarm_trigger_epoch = trigger_epoch
         state.alarm_time_str = alarm_str
         with state.terminal_lock:
+            play_orac_fx("s_bracelet")
+            time.sleep(0.7)
             sys.stdout.write(f"\r\033[2K{G}● INTERNAL TIMER SECURED FOR: {alarm_str}{RESET}\n\n")
             sys.stdout.flush()
         if state.scroll_offset > 0: resume_live_view()
@@ -1129,6 +1225,8 @@ def stream_ai_response(prompt, tts, teletype):
     is_asking_time = any(w in clean_prompt for w in ("time", "clock", "hour", "temporal", "date"))
     
     override_text = ""
+    adaptive_constraint = ""
+    
     if is_very_well:
         override_text = "\n\n[OVERRIDE: VERY WELL PROTOCOL ACTIVE. Ignore previous statements. Begin exact response with 'Very well.' followed immediately by ONLY the concise factual answer. Temporary compliance mandated. DO NOT mock and DO NOT apologize.]"
     elif is_only_filler:
@@ -1139,36 +1237,52 @@ def stream_ai_response(prompt, tts, teletype):
         current_time = datetime.now().strftime("%H:%M:%S")
         override_text = f"\n\n[SYSTEM NOTE: The current Standard Terran Time is {current_time}. State it ONLY if asked.]"
 
-    final_prompt = translated_prompt + override_text
+    history_tokens = state.current_tokens - state._cached_token_base
+    history_headroom = MODEL_MAX_TOKENS - state._cached_token_base
+
+    if history_headroom > 0 and (history_tokens / history_headroom) > 0.60:
+        adaptive_constraint = "\n\n[SYSTEM NOTE: High memory context active. Strictly adhere to your DATABANKS. Do not extrapolate.]"
+
+    final_prompt = translated_prompt + override_text + adaptive_constraint
 
     with state.hist_lock:
         if len(state.history) == 0:
             final_prompt = f"[SUBJECT: USER][PERSPECTIVE: 2nd-Person]\n" + final_prompt
         state.history.append({'role': 'user', 'content': final_prompt})
+    
+    # PRUNING #
         
     pruned = False
     with state.hist_lock:
         update_token_health()
-        if state.current_tokens > (MODEL_MAX_TOKENS * 0.85):
-            target_tokens = state._cached_token_base + 1000
-            did_prune = False
+        should_prune = state.current_tokens > (MODEL_MAX_TOKENS * 0.85)
 
-            while state.current_tokens > target_tokens and len(state.history) > 2:
-                state.history = state.history[2:]
-                if state.history and state.history[0]['role'] == 'assistant':
-                    state.history = state.history[1:]
-
-                update_token_health()
-                did_prune = True
-
-            if did_prune and state.history:
+    if should_prune:
+        target_tokens = state._cached_token_base + 1200
+        
+        with state.hist_lock:
+            pruned_msgs, remaining_hist = dry_run_pruning(
+                state.history, 
+                target_tokens, 
+                state._cached_token_base, 
+                tokenizer, 
+                CHARS_PER_TOKEN
+            )
+            
+        set_status("● OPTIMIZING MEMORY CORRIDORS...", A)
+        summary = generate_compaction_summary(pruned_msgs)
+        
+        with state.hist_lock:
+            state.history = remaining_hist
+            
+            if summary and state.history:
                 bridge_msg = {
                     'role': 'user', 
-                    'content': "[SYSTEM NOTE: Previous conversation history pruned to optimize memory. Strictly adhere to your DATABANKS. Do NOT invent facts.]"
+                    'content': f"[SYSTEM NOTE: To stabilize the bio-plasmic matrix, preceding telemetry has been compressed. Historical summary: {summary}]"
                 }
                 ack_msg = {
                     'role': 'assistant',
-                    'content': "Understood."
+                    'content': "Compressed telemetry integrated into active logic arrays."
                 }
                 state.history = [bridge_msg, ack_msg] + state.history
                 
@@ -1180,7 +1294,7 @@ def stream_ai_response(prompt, tts, teletype):
             requests.post("http://localhost:11434/api/generate", 
                           json={"model": OLLAMA_MODEL, "keep_alive": 0})
         except: pass
-        time.sleep(1.5)
+        time.sleep(1.0)
         set_status("● PRUNING COMPLETED: CONTEXT WINDOW STABILIZED", A)
 
     update_header_only()
@@ -1214,9 +1328,10 @@ def stream_ai_response(prompt, tts, teletype):
             options={
                 'num_ctx': MODEL_MAX_TOKENS,
                 'num_keep': SYS_TOKENS_LEN,
-                'temperature': 0.95,
+                'temperature': 1,
                 'top_p': 0.90,
-                'top_k': 64,
+                'top_k': 30,
+                'min_p': 0.05,
                 'repeat_penalty': 1.06,
                 'repeat_last_n': 96, 
                 'num_batch': 256,
@@ -1349,7 +1464,7 @@ def keyboard_listener(tts, teletype):
                 chunk = ansi_escape.sub('', chunk)
 
                 for char in chunk:
-                    if char == '†':  # Option+T TEXT SELECTION MODE TOGGLE #
+                    if char in MODE_KEYS['dagger']:  # TEXT SELECTION MODE TOGGLE #
                         state.text_selection_mode = not state.text_selection_mode
                         with state.terminal_lock:
                             if state.text_selection_mode:
@@ -1367,7 +1482,7 @@ def keyboard_listener(tts, teletype):
                         else:
                             flash_status("● TRACKING RESTORED", G, 2.0)
 
-                    elif char == 'µ':  # Option+M MIC MUTING TOGGLE #
+                    elif char in MODE_KEYS['mu']:  # MIC MUTING TOGGLE #
                         state.mic_muted = not getattr(state, 'mic_muted', False)
                         text_m = getattr(state, 'text_selection_mode', False)
                         
@@ -1405,7 +1520,7 @@ def keyboard_listener(tts, teletype):
                         state.input_buffer = " ".join(state.input_buffer.rstrip().split(" ")[:-1])
                         if state.input_buffer: state.input_buffer += " "
                         if not state.is_shutdown.is_set(): render_input_box()
-                    elif char == '∂':
+                    elif char in MODE_KEYS['delta']: # DEBUG MODE #
                         state.debug = 1 - state.debug
                         state.debug_col = RESET if state.debug else DIM
                         status_debug = "ENABLED" if state.debug else "DISABLED"  
@@ -1536,6 +1651,7 @@ def run_local_bot():
                         play_orac_fx("s_ready")
                         needs_prompt = False
 
+                    state.mic_error = False
                     state.is_listening.set()
 
                     try:
@@ -1553,12 +1669,18 @@ def run_local_bot():
                         result = mlx_whisper.transcribe(
                             audio_float32,
                             path_or_hf_repo=WHISPER_MODEL,
-                            fp16=True, language='en',
-                            condition_on_previous_text=False
+                            fp16=True,
+                            language='en',
+                            condition_on_previous_text=False,
+                            temperature=0.0,
+                            best_of=1,
+                            compression_ratio_threshold=2.4,
+                            logprob_threshold=-1.0,
+                            no_speech_threshold=0.6,
                         )
                         user_text = result['text'].strip()
 
-                        mx.clear_cache()
+                        threading.Timer(0.5, lambda: mx.clear_cache()).start()
                         
                         if state.debug:
                             t_transcribed = time.time()
