@@ -1,4 +1,5 @@
 import atexit
+import contextlib
 import mlx.core as mx
 import mlx_whisper
 import numpy as np
@@ -36,7 +37,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 #==================================================================================================#
-#    					     ORAC-VOICE v1.4.9 (Lore friendly VoiceChat)                           #
+#    					     ORAC-VOICE v1.5.3 (Lore friendly VoiceChat)                           #
 #                                     gemma4:12b-mlx Optimized                                     #
 #          						  Copyright © 2026 Caroline Mayne                                  #
 #         						 https://github.com/CarolinaJones/                                 #
@@ -79,19 +80,7 @@ CHARS_PER_TOKEN = 4.18								# For UI Health Bar estimation fallback
 RAM_CHECK_INTERVAL = 10.0							# Check RAM usage for Header
 HEADER_UPDATE_INTERVAL = 5.0						# Update Header Interval
 
-WHISPER_MODEL = os.path.join(BASE_DIR, "whisper/whisper-turbo-q4")	# Whisper-turbo-q4
-
-LOCAL_TOKENIZER_PATH = os.path.join(BASE_DIR, "resources/gemma4_tokenizer")
-
-SOUND_PROCESSING = os.path.join(BASE_DIR, "resources/sounds/orac-hum_48k.wav")
-SOUND_COMPUTE_START = os.path.join(BASE_DIR, "resources/sounds/orac-startup_48k.wav")
-SOUND_COMPUTE_END = os.path.join(BASE_DIR, "resources/sounds/orac-shutdown_48k.wav")
-SOUND_SHUTDOWN = os.path.join(BASE_DIR, "resources/sounds/orac-shutdown_48k.wav")
-SOUND_READY = os.path.join(BASE_DIR, "resources/sounds/sub_48k.wav")
-SOUND_QUIT = os.path.join(BASE_DIR, "resources/sounds/funk_48k.wav")
-SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet_48k.wav")
-
-# ANSII PALETTES & CURSORS & KEY 'MODE' DETECTS #
+# ANSII PALETTES, CURSORS & KEY 'MODE' DETECTS, SOUND FX & TOKENIZER PATHS #
 
 G, A, R, B = "\033[38;5;46m", "\033[38;5;214m", "\033[38;5;196m", "\033[1;37m"
 FL, NOFL, DIM, RESET = "\033[5m", "\033[25m", "\033[2m", "\033[0m"
@@ -102,6 +91,45 @@ MODE_KEYS = {
     'mu':     ['µ', '\u00b5', '\x1bm', '\x1bM'],  # Option+M (Literal, Unicode, or Esc+m)
     'delta':  ['∂', '\u2202', '\x1bd', '\x1bD']   # Option+D (Literal, Unicode, or Esc+d)
 }
+
+SOUND_PROCESSING = os.path.join(BASE_DIR, "resources/sounds/orac-hum_48k.wav")
+SOUND_COMPUTE_START = os.path.join(BASE_DIR, "resources/sounds/orac-startup_48k.wav")
+SOUND_COMPUTE_END = os.path.join(BASE_DIR, "resources/sounds/orac-shutdown_48k.wav")
+SOUND_SHUTDOWN = os.path.join(BASE_DIR, "resources/sounds/orac-shutdown_48k.wav")
+SOUND_READY = os.path.join(BASE_DIR, "resources/sounds/sub_48k.wav")
+SOUND_QUIT = os.path.join(BASE_DIR, "resources/sounds/funk_48k.wav")
+SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet_48k.wav")
+
+LOCAL_TOKENIZER_PATH = os.path.join(BASE_DIR, "resources/gemma4_tokenizer")
+
+# STT MODEL DEFINE & CHECKING #
+
+WHISPER_MODEL = os.path.join(BASE_DIR, "whisper/whisper-turbo-q4")	# Whisper-turbo-q4
+TEXT_ONLY_MODE = False
+
+try:
+    if os.path.isdir(WHISPER_MODEL) and os.path.exists(os.path.join(WHISPER_MODEL, "config.json")):    
+        whisper_found = "SUCCESSFUL"
+    else:
+        raise FileNotFoundError(f"Whisper model not found in {WHISPER_MODEL}")
+except Exception as e:
+    sys.stdout.write(f"\n{R}● CRITICAL ERROR: Whisper Speech-to-Text Model not found.{RESET}\n")
+    sys.stdout.write(f"{R}{FL}●{NOFL} EXPECTED PATH:{RESET} {WHISPER_MODEL}\n\n")
+    sys.stdout.flush()
+    
+    stt_alert = NSSound.alloc().initWithContentsOfFile_byReference_(SOUND_QUIT, True)
+    if stt_alert:
+        stt_alert.play()
+        time.sleep(1)
+    
+    while True:
+        choice = input("  Continue in TEXT-ONLY mode? (Y/N): ").strip().lower()
+        if choice == 'y':
+            TEXT_ONLY_MODE = True
+            whisper_found = "DISABLED"
+            break
+        elif choice == 'n':
+            sys.exit(0)
 
 # GLOBAL OPTIMIZATIONS #
 
@@ -163,7 +191,7 @@ personalized_data_core = personalize_core(data_core, USER_NAME)
 
 SYSTEM_INSTRUCTION = (
  f"CRITICAL: Follow ALL constraints literally. using the DATABANKS below. Do NOT hallucinate or infer.\n\n"
- f"{orac_personality}\n\n"
+ f"{orac_personality.format(ORAC_NAME=ORAC_NAME)}\n\n"
  f"--- DATABANKS ---\n"
  f"{personalized_data_core}\n\n"
  f"--- DIRECTIVES ---\n"
@@ -204,6 +232,7 @@ except Exception as e:
 class OracState:
     def __init__(self):
         self.running = True
+        self.stream_epoch = 0.0
         self.current_tokens = 0
         self.token_status = "NOMINAL"
         self.token_color = G
@@ -828,7 +857,7 @@ def parse_time_command(text):
         "forty": 40, "fifty": 50, "sixty": 60
     }
     
-    t_match = re.search(r'(?:set\s+(?:a|an)\s+)?timer for (a|an|half an|\d+|[a-z]+)\s*(sec|min|hour)', clean_text)
+    t_match = re.search(r'(?:set\s+(?:a|an)\s+)?timer for (a|an|half an|\d+|[a-z]+(?:[- ][a-z]+)?)\s*(sec|min|hour)', clean_text)
     if t_match:
         val_str = t_match.group(1)
         unit = t_match.group(2)
@@ -838,8 +867,8 @@ def parse_time_command(text):
         elif val_str.isdigit():
             val = int(val_str)
         else:
-            val = word_to_num.get(val_str, 0)
-
+            val = sum(word_to_num.get(w, 0) for w in re.split(r'[- ]', val_str))
+    
         if val > 0:
             mult = 1
             if 'min' in unit: mult = 60
@@ -856,7 +885,7 @@ def parse_time_command(text):
         now = datetime.now()
         try:
             target = now.replace(hour=hr, minute=mins, second=0, microsecond=0)
-            if target <= now: target = target.replace(day=now.day + 1)
+            if target <= now: target = target + timedelta(days=1)
             return target.timestamp(), target.strftime('%H:%M')
         except ValueError:
             return None, None
@@ -1056,6 +1085,7 @@ def trigger_barge_in(tts, teletype):
     if not state.is_processing.is_set() and not state.is_speaking.is_set() and not teletype.is_typing.is_set():
         return 
     state.is_interrupted.set()
+    state.stream_epoch = time.time()
 
     while not teletype.q.empty():
         try:
@@ -1193,7 +1223,7 @@ def startup_animation():
 #     								  LLM STREAM HANDLER                                           #
 #==================================================================================================#
 
-def stream_ai_response(prompt, tts, teletype):
+def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     translated_prompt = translate_user_prompt(prompt)
 
     clean_prompt = prompt.lower().strip(".,!? ")
@@ -1339,13 +1369,15 @@ def stream_ai_response(prompt, tts, teletype):
                 'stop': ['<end_of_turn>', '<eos>']
             }
         ):
-            if state.is_interrupted.is_set(): break
+            if state.is_interrupted.is_set() or (epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id):
+                break
             
             if first_chunk:
                 if state.debug:
                     t_llm_first_token = time.time()
-                    sys.stdout.write(f"{DIM}[DEBUG] LLM Time to First Token took: {t_llm_first_token - t_llm_start:.2f}s{RESET}\n")
-                    sys.stdout.flush()
+                    with state.terminal_lock:
+                        sys.stdout.write(f"{DIM}[DEBUG] LLM Time to First Token took: {t_llm_first_token - t_llm_start:.2f}s{RESET}\n")
+                        sys.stdout.flush()
                 
                 set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
                 with state.terminal_lock:
@@ -1376,7 +1408,8 @@ def stream_ai_response(prompt, tts, teletype):
                     sentence_buffer = sentence_buffer[split_point:]
                 else: break
     
-        if not state.is_interrupted.is_set():
+        is_stale = epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id
+        if not state.is_interrupted.is_set() and not is_stale:
             if first_chunk: 
                 set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
                 with state.terminal_lock:
@@ -1396,21 +1429,34 @@ def stream_ai_response(prompt, tts, teletype):
         else:
             with teletype.q.mutex: teletype.q.queue.clear()
             teletype.is_typing.clear()
-            partial_text = "".join(response_chunks).strip() + " ... [INTERRUPTED]"
-            if partial_text.strip() != "... [INTERRUPTED]":
-                with state.hist_lock:
-                    state.history.append({'role': 'assistant', 'content': partial_text})
-                    state.full_message_log.append(('assistant', partial_text))
+            partial_text = "".join(response_chunks).strip()
+            fallback_text = partial_text + " ... [INTERRUPTED]" if partial_text else "[transmission interrupted]"
+            
+            with state.hist_lock:
+                if state.history and state.history[-1]['role'] == 'user':
+                    state.history.append({'role': 'assistant', 'content': fallback_text})
+                    state.full_message_log.append(('assistant', fallback_text))
                 
     except Exception as e:
-        with state.terminal_lock:
-            sys.stdout.write(f"\n{R}● DATALINK SEVERED: {e}{RESET}\n")
-            sys.stdout.flush()
-        state.is_interrupted.set() 
+        is_stale = epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id
+    
+        if not is_stale:
+            with state.terminal_lock:
+                sys.stdout.write(f"\n{R}● DATALINK SEVERED: {e}{RESET}\n")
+                sys.stdout.flush()
+            state.is_interrupted.set()
+    
+            with state.hist_lock:
+                if state.history and state.history[-1]['role'] == 'user':
+                    state.history.append({'role': 'assistant', 'content': "[DATALINK SEVERED]"})
+                    state.full_message_log.append(('assistant', "[DATALINK SEVERED]"))
+    
     finally:
-        state.is_processing.clear()
-        state.is_interrupted.clear()
-
+        if epoch_id is None or getattr(state, 'stream_epoch', None) == epoch_id:
+            teletype.is_typing.clear()
+            state.is_processing.clear()
+            state.is_interrupted.clear()
+            
 #==================================================================================================#
 #     									   MAIN LOOP                                               #
 #==================================================================================================#
@@ -1460,6 +1506,10 @@ def keyboard_listener(tts, teletype):
 
                 if '\x1b' in chunk and state.scroll_offset > 0:
                     resume_live_view()
+                    
+                chunk = chunk.replace('\x1bt', '†').replace('\x1bT', '†')
+                chunk = chunk.replace('\x1bm', 'µ').replace('\x1bM', 'µ')
+                chunk = chunk.replace('\x1bd', '∂').replace('\x1bD', '∂')
 
                 chunk = ansi_escape.sub('', chunk)
 
@@ -1483,6 +1533,10 @@ def keyboard_listener(tts, teletype):
                             flash_status("● TRACKING RESTORED", G, 2.0)
 
                     elif char in MODE_KEYS['mu']:  # MIC MUTING TOGGLE #
+                        if TEXT_ONLY_MODE:
+                            flash_status("● MICROPHONE DISABLED (TEXT-ONLY MODE)", R, 2.0)
+                            continue
+                            
                         state.mic_muted = not getattr(state, 'mic_muted', False)
                         text_m = getattr(state, 'text_selection_mode', False)
                         
@@ -1552,18 +1606,27 @@ def run_local_bot():
 
     while state.running: 
         try:
-            with sr.Microphone(sample_rate=16000) as source:
-                with state.terminal_lock:
-                    sys.stdout.write(f"● {R}CALIBRATING AMBIENT NOISE...{RESET}\n")
-                    sys.stdout.flush()
-                recognizer.adjust_for_ambient_noise(source, duration=1)
-                recognizer.energy_threshold += 150
-                state.noise_floor = recognizer.energy_threshold
-                update_header_only() 
-                with state.terminal_lock:
-                    sys.stdout.write(f"● {R}NOISE FLOOR: CALIBRATED{RESET}\n")
-                    sys.stdout.write(f"● {R}TOKENIZATION {tokenizer_mode}: {SYS_TOKENS_LEN}{RESET}\n\n")
-                    sys.stdout.flush()
+            mic_context = contextlib.nullcontext() if TEXT_ONLY_MODE else sr.Microphone(sample_rate=16000)
+            
+            with mic_context as source:
+                if not TEXT_ONLY_MODE:
+                    with state.terminal_lock:
+                        sys.stdout.write(f"● {R}CALIBRATING AMBIENT NOISE...{RESET}\n")
+                        sys.stdout.flush()
+                    recognizer.adjust_for_ambient_noise(source, duration=1)
+                    recognizer.energy_threshold += 150
+                    state.noise_floor = recognizer.energy_threshold
+                    update_header_only() 
+                    with state.terminal_lock:
+                        sys.stdout.write(f"● {R}NOISE FLOOR: CALIBRATED{RESET}\n")
+                        sys.stdout.write(f"● {R}TOKENIZATION {tokenizer_mode}: {SYS_TOKENS_LEN}{RESET}\n\n")
+                        sys.stdout.flush()
+                else:
+                    state.mic_muted = True
+                    with state.terminal_lock:
+                        sys.stdout.write(f"● {R}TOKENIZATION {tokenizer_mode}: {SYS_TOKENS_LEN}{RESET}\n")
+                        sys.stdout.write(f"● {A}TEXT-ONLY MODE ENGAGED{RESET}\n\n")
+                        sys.stdout.flush()
 
                 while state.running:
                     bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.queue.empty()
@@ -1626,7 +1689,8 @@ def run_local_bot():
                         state.is_interrupted.clear()
                         state.is_listening.clear() 
                         state.is_processing.set()
-                        threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype), daemon=True).start()
+                        state.stream_epoch = time.time()
+                        threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype, state.stream_epoch), daemon=True).start()
                         continue
 
                     if bot_busy:
@@ -1635,7 +1699,7 @@ def run_local_bot():
                         time.sleep(0.1) 
                         continue
                         
-                    if getattr(state, 'mic_muted', False):
+                    if getattr(state, 'mic_muted', False) or TEXT_ONLY_MODE:
                         needs_prompt = True
                         time.sleep(0.2)
                         continue
@@ -1684,8 +1748,9 @@ def run_local_bot():
                         
                         if state.debug:
                             t_transcribed = time.time()
-                            sys.stdout.write(f"{DIM}[DEBUG] STT Transcription took: {t_transcribed - t_start:.2f}s{RESET}\n")
-                            sys.stdout.flush()
+                            with state.terminal_lock:
+                                sys.stdout.write(f"{DIM}[DEBUG] STT Transcription took: {t_transcribed - t_start:.2f}s{RESET}\n")
+                                sys.stdout.flush()
 
                         del audio_raw
                         del audio_float32
@@ -1740,7 +1805,8 @@ def run_local_bot():
                             state.is_interrupted.clear()
                             state.is_listening.clear() 
                             state.is_processing.set()
-                            threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype), daemon=True).start()
+                            state.stream_epoch = time.time()
+                            threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype, state.stream_epoch), daemon=True).start()
 
                     except sr.WaitTimeoutError: 
                         state.is_listening.clear()
