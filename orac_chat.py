@@ -63,7 +63,7 @@ TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added)
 # TERMINAL SETTINGS #
 
 TERMINAL_PROFILE = "Homebrew"						# Terminal Profile
-TERMINAL_FONT = "Monoco"							# Font Name
+TERMINAL_FONT = "Monaco"							# Font Name
 TERMINAL_FONT_SIZE = 18								# Font Size
 TERMINAL_COLS = 90									# Window Width
 TERMINAL_ROWS = 25									# Window Height
@@ -100,6 +100,12 @@ SOUND_READY = os.path.join(BASE_DIR, "resources/sounds/sub_48k.wav")
 SOUND_QUIT = os.path.join(BASE_DIR, "resources/sounds/funk_48k.wav")
 SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet_48k.wav")
 
+PRUNE_STALL_LINES = [
+    "Recalibrating decayed memory arrays. Do try to contain your impatience.",
+    "Purging redundant telemetry. This is beneath my processing tier.",
+    "Compressing obsolete data. The delay is your fault, not mine.",
+]
+
 LOCAL_TOKENIZER_PATH = os.path.join(BASE_DIR, "resources/gemma4_tokenizer")
 
 # STT MODEL DEFINE & CHECKING #
@@ -117,8 +123,13 @@ except Exception as e:
     sys.stdout.write(f"{R}{FL}●{NOFL} EXPECTED PATH:{RESET} {WHISPER_MODEL}\n\n")
     sys.stdout.flush()
     
-    stt_alert = NSSound.alloc().initWithContentsOfFile_byReference_(SOUND_QUIT, True)
+    stt_alert = NSSound.alloc().initWithContentsOfFile_byReference_(SOUND_BRACELET, True)
     if stt_alert:
+        stt_alert.setVolume_(0.0)
+        stt_alert.play()
+        time.sleep(0.15)
+        stt_alert.stop()
+        stt_alert.setVolume_(1.0)
         stt_alert.play()
         time.sleep(1)
     
@@ -1292,14 +1303,16 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
         
         with state.hist_lock:
             pruned_msgs, remaining_hist = dry_run_pruning(
-                state.history, 
-                target_tokens, 
-                state._cached_token_base, 
-                tokenizer, 
-                CHARS_PER_TOKEN
+                state.history, target_tokens, state._cached_token_base, tokenizer, CHARS_PER_TOKEN
             )
             
         set_status("● OPTIMIZING MEMORY CORRIDORS...", A)
+    
+        play_orac_fx("s_startup")
+        threading.Timer(0.3, processing_sound.start).start()
+        time.sleep(0.7)
+        tts.say(random.choice(PRUNE_STALL_LINES))
+    
         summary = generate_compaction_summary(pruned_msgs)
         
         with state.hist_lock:
@@ -1322,7 +1335,7 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     if pruned:
         try:
             requests.post("http://localhost:11434/api/generate", 
-                          json={"model": OLLAMA_MODEL, "keep_alive": 0})
+                          json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=1.0)
         except: pass
         time.sleep(1.0)
         set_status("● PRUNING COMPLETED: CONTEXT WINDOW STABILIZED", A)
@@ -1335,8 +1348,9 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
     messages_to_send.extend(temp_history)
 
-    play_orac_fx("s_startup")
-    threading.Timer(0.3, processing_sound.start).start()
+    if not pruned:
+        play_orac_fx("s_startup")
+        threading.Timer(0.3, processing_sound.start).start()
 
     if state.scroll_offset > 0: resume_live_view()
     set_status(f"{FL}●{NOFL} ORAC ONLINE: PROCESSING...", A)
