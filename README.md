@@ -108,7 +108,23 @@ return 0; }' > auth_check.m && gcc -framework AVFoundation -framework Foundation
 ```
 You'll get an `authorization` pop-up to agree to, and in MacOS settings, *(under Personal Voice)*, you should now see that Terminal is authorized to use it.
 
-**6. Using Voicebox to train Apple Personal Voice:**
+**6. OPTIONAL: Shutdown MAC with voice command**
+
+I have added the option to say or type, "Activate System Shutdown", specifically for my battery powered/headless, ORAC.
+
+**"CAUTION: In order for this to work, root priveledges for shutdown will need to be set."**
+
+If you choose to continue, from Terminal type:
+```
+sudo visudo -f /etc/sudoers.d/orac_shutdown
+````
+Add this line (replace your_username with your Mac user account name):
+```
+your_username ALL=(ALL) NOPASSWD: /sbin/shutdown
+````
+Save and exit (:wq in vim). Test it in Terminal by running sudo -n /sbin/shutdown -k now (the -k sends a mock warning without actually shutting down; if it asks for no password, it works).
+
+**7. Using Voicebox to train Apple Personal Voice:**
 
 Download latest **Apple ARM** release of `Voicebox` from:
 ```bash
@@ -121,7 +137,7 @@ https://voicebox.sh/#download
 - Repeat for subsequent phrases. *(It might take a few goes!)*
 - Set your Mac's `System Voice` to your personal voice and make sure in the 'orac_chat.py', `VOICE = ""`.
 
-**7. ...and now to configure some variables & test:**
+**8. ...and now to configure some variables & test:**
 
 Ensuring you're in the directory, 'orac-voice',
 open 'orac_chat.py' in an editor, such as BBEdit and change these variables **(ONLY)** to suit.
