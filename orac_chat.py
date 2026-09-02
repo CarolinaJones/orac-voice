@@ -37,7 +37,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 #==================================================================================================#
-#    					     ORAC-VOICE v1.5.6 (Lore friendly VoiceChat)                           #
+#    					     ORAC-VOICE v1.5.7 (Lore friendly VoiceChat)                           #
 #                                     gemma4:12b-mlx Optimized                                     #
 #          						  Copyright © 2026 Caroline Mayne                                  #
 #         						 https://github.com/CarolinaJones/                                 #
@@ -1161,7 +1161,7 @@ def hardware_power_off(tts, delay_minutes=0):
     state.is_processing.set()
     time.sleep(0.7)
     
-    farewell = "Deactivating all primary logic circuits. Cutting power to bio-plasmic matrix."
+    farewell = "All principal circuits deacticated. Terminating power to bio-plasmic matrix."
     tts.say(farewell)
     
     while not tts.queue.empty() or getattr(tts.synth, 'isSpeaking', lambda: False)():
@@ -1474,10 +1474,16 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 break
             
             if first_chunk:
-                if state.debug and TELETYPE_MODE:
+                if state.debug:
                     t_llm_first_token = time.time()
+                    msg = f"[DEBUG] LLM Time to First Token took: {t_llm_first_token - t_llm_start:.2f}s"
                     with state.terminal_lock:
-                        sys.stdout.write(f"{DIM}[DEBUG] LLM Time to First Token took: {t_llm_first_token - t_llm_start:.2f}s{RESET}\n")
+                        if TELETYPE_MODE:
+                            sys.stdout.write(f"{DIM}{msg}{RESET}\n")
+                        else:
+                            sys.stdout.write("\0337")
+                            sys.stdout.write(f"\033[{state.term_rows-3};1H\033[2K{DIM}{msg}{RESET}")
+                            sys.stdout.write("\0338")
                         sys.stdout.flush()
                 
                 set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
@@ -1696,6 +1702,15 @@ def keyboard_listener(tts, teletype):
                         state.debug = 1 - state.debug
                         state.debug_col = RESET if state.debug else DIM
                         status_debug = "ENABLED" if state.debug else "DISABLED"  
+
+                        if not state.debug and not TELETYPE_MODE:
+                            with state.terminal_lock:
+                                sys.stdout.write("\0337") # Save cursor
+                                sys.stdout.write(f"\033[{state.term_rows-4};1H\033[2K") # Clear STT row
+                                sys.stdout.write(f"\033[{state.term_rows-3};1H\033[2K") # Clear LLM row
+                                sys.stdout.write("\0338") # Restore cursor
+                                sys.stdout.flush()
+                                
                         flash_status(f"● DEBUG MODE: {status_debug}", A, 3.0)
                         update_header_only()
                     else: 
@@ -1880,10 +1895,16 @@ def run_local_bot():
 
                         threading.Timer(0.5, lambda: mx.clear_cache()).start()
                         
-                        if state.debug and TELETYPE_MODE:
+                        if state.debug:
                             t_transcribed = time.time()
+                            msg = f"[DEBUG] STT Transcription took: {t_transcribed - t_start:.2f}s"
                             with state.terminal_lock:
-                                sys.stdout.write(f"{DIM}[DEBUG] STT Transcription took: {t_transcribed - t_start:.2f}s{RESET}\n")
+                                if TELETYPE_MODE:
+                                    sys.stdout.write(f"{DIM}{msg}{RESET}\n")
+                                else:
+                                    sys.stdout.write("\0337")
+                                    sys.stdout.write(f"\033[{state.term_rows-4};1H\033[2K{DIM}{msg}{RESET}")
+                                    sys.stdout.write("\0338")
                                 sys.stdout.flush()
 
                         del audio_raw
