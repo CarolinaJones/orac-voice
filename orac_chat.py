@@ -1162,7 +1162,7 @@ def hardware_power_off(tts, delay_minutes=0):
     state.is_processing.set()
     time.sleep(0.7)
     
-    farewell = "All principal circuits deacticated. Terminating power to bio-plasmic matrix."
+    farewell = "All principle circuits, deactivated. Power to bio-plasmic matrix: Terminating."
     tts.say(farewell)
     
     while not tts.queue.empty() or getattr(tts.synth, 'isSpeaking', lambda: False)():
