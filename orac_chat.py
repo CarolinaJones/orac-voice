@@ -51,6 +51,7 @@ USER_NAME = "Jenna" 								# USER Name and Identity
 ORAC_NAME = "ORAC"									# ORAC's Name
 
 TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+DEBUG_START = 0										# Start with Debug Mode enabled (1 = Yes  0 = No)
 
 VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices
 voice_pitch = 72 	# Only works on SYNTH voices and not SIRI/Personal voices
@@ -280,7 +281,7 @@ class OracState:
         self.cached_ram = " 0.0%"
         self.term_cols = TERMINAL_COLS
         self.term_rows = TERMINAL_ROWS
-        self.debug = 0
+        self.debug = DEBUG_START
         self.debug_col = DIM
         self.sounds = {}      
         for name, path in {
