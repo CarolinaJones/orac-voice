@@ -37,7 +37,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 #==================================================================================================#
-#    					     ORAC-VOICE v1.5.7 (Lore friendly VoiceChat)                           #
+#    					     ORAC-VOICE v1.5.8 (Lore friendly VoiceChat)                           #
 #                                     gemma4:12b-mlx Optimized                                     #
 #          						  Copyright © 2026 Caroline Mayne                                  #
 #         						 https://github.com/CarolinaJones/                                 #
@@ -51,14 +51,14 @@ USER_NAME = "Jenna" 								# USER Name and Identity
 ORAC_NAME = "ORAC"									# ORAC's Name
 
 TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+U1 = 0.038											# Teletype Speed
+U2 = 0.042											# Teletype Uniformity
+
 DEBUG_START = 0										# Start with Debug Mode enabled (1 = Yes  0 = No)
 
 VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices
 voice_pitch = 72 	# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 182		# Synth Speech Rate
-
-U1 = 0.038											# Teletype Speed
-U2 = 0.042											# Teletype Uniformity
 
 TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder
 TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added)
@@ -68,7 +68,7 @@ TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added)
 TERMINAL_PROFILE = "Homebrew"						# Terminal Profile
 TERMINAL_FONT = "Monaco"							# Font Name
 TERMINAL_FONT_SIZE = 18								# Font Size
-TERMINAL_COLS = 90									# Window Width
+TERMINAL_COLS = 90 if TELETYPE_MODE else 80			# Window Width
 TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 
 #==================================================================================================#
