@@ -1,5 +1,6 @@
 import atexit
 import contextlib
+import json
 import mlx.core as mx
 import mlx_whisper
 import numpy as np
@@ -35,9 +36,8 @@ from orac_phonetics import orac_phonetics
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
 #==================================================================================================#
-#    					     ORAC-VOICE v1.5.7 (Lore friendly VoiceChat)                           #
+#    					     ORAC-VOICE v1.6.5 (Lore friendly VoiceChat)                           #
 #                                     gemma4:12b-mlx Optimized                                     #
 #          						  Copyright © 2026 Caroline Mayne                                  #
 #         						 https://github.com/CarolinaJones/                                 #
@@ -50,25 +50,31 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_NAME = "Jenna" 								# USER Name and Identity
 ORAC_NAME = "ORAC"									# ORAC's Name
 
-TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
-DEBUG_START = 0										# Start with Debug Mode enabled (1 = Yes  0 = No)
+TELETYPE_MODE = False                               # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+U1 = 0.038											# Teletype Speed
+U2 = 0.042											# Teletype Uniformity
+
+USE_LCD = True                                      # Enable Forenove 1602 I2C LCD via Pi Pico
+LCD_PORT = "/dev/cu.usbmodem101"                    # Serial port for Pico
+LCD_BAUD = 115200                                   # Pico serial baud rate
+
+DEBUG_START = 1										# Start with Debug Mode enabled (1 = Yes  0 = No)
 
 VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices
 voice_pitch = 72 	# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 182		# Synth Speech Rate
 
-U1 = 0.038											# Teletype Speed
-U2 = 0.042											# Teletype Uniformity
-
 TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder
 TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added)
+
+ARCHIVE_DIR = os.path.join(BASE_DIR, "memory_core") # Permanent Daily RAG Archives
 
 # TERMINAL SETTINGS #
 
 TERMINAL_PROFILE = "Homebrew"						# Terminal Profile
 TERMINAL_FONT = "Monaco"							# Font Name
 TERMINAL_FONT_SIZE = 18								# Font Size
-TERMINAL_COLS = 90									# Window Width
+TERMINAL_COLS = 90 if TELETYPE_MODE else 80			# Window Width
 TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 
 #==================================================================================================#
@@ -76,7 +82,6 @@ TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 #==================================================================================================#
 		
 OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
-#OLLAMA_MODEL = 'gemma4:31b-cloud'					# Cloud based gemma4
 
 MODEL_MAX_TOKENS = 10240							# MAX TOKENS for STATUS Predict & NUM_CTX
 CHARS_PER_TOKEN = 4.18								# For UI Health Bar estimation fallback
@@ -244,9 +249,24 @@ except Exception as e:
 #     								APPLICATION STATE & CLEANUP                                    #
 #==================================================================================================#
 
+# LCD SERIAL SETUP #
+serial_port = None
+if USE_LCD:
+    try:
+        import serial
+        serial_port = serial.Serial(LCD_PORT, LCD_BAUD, timeout=1)
+        time.sleep(1)
+    except Exception as e:
+        sys.stdout.write(f"\n\033[38;5;196m● LCD INIT FAILED: {e}\033[0m\n")
+        USE_LCD = False
+
 class OracState:
     def __init__(self):
         self.running = True
+        self.last_stt_time = "--"
+        self.last_ttft_time = "--"
+        self.last_status = "INITIALIZING..."
+        self.last_lcd_payload = ""
         self.stream_epoch = 0.0
         self.current_tokens = 0
         self.token_status = "NOMINAL"
@@ -307,6 +327,11 @@ except:
     old_term_settings = None
 
 def cleanup_processes():
+    global serial_port
+    if 'serial_port' in globals() and serial_port:
+        try: shutdown_lcd_display(), serial_port.close()
+                       
+        except: pass
     if old_term_settings:
         termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_term_settings)
     try:
@@ -335,6 +360,27 @@ def cleanup_processes():
         state.active_procs.clear()
 
 atexit.register(cleanup_processes)
+
+def save_archival_memory():
+    """Appends the current session's user telemetry to the permanent daily archive."""
+    try:
+        os.makedirs(ARCHIVE_DIR, exist_ok=True)
+        today = datetime.now().strftime("%Y-%m-%d")
+        archive_path = os.path.join(ARCHIVE_DIR, f"orac_archive_{today}.json")
+        
+        existing_log = []
+        if os.path.exists(archive_path):
+            with open(archive_path, 'r', encoding='utf-8') as f:
+                existing_log = json.load(f).get('log', [])
+        
+        if state.full_message_log:
+            # Filter to ONLY save the user's questions to save massive token weight
+            user_logs = [item for item in state.full_message_log if item[0] == 'user']
+            with open(archive_path, 'w', encoding='utf-8') as f:
+                json.dump({'log': existing_log + user_logs}, f, indent=4)
+                
+    except Exception:
+        pass
 
 #==================================================================================================#
 #     				  TERMINAL UI & LAYOUT ENGINE (Based on Term App Used)                         #
@@ -406,11 +452,19 @@ def update_token_health():
 
 def set_status(text, color=G):
     rows = state.term_rows
+    
+    clean_text = ansi_escape.sub('', text)
+    clean_text = clean_text.replace('●', '').replace('▶', '').replace('█', '').strip()
+    state.last_status = clean_text
+    
     with state.terminal_lock:
         sys.stdout.write("\0337")
         sys.stdout.write(f"\033[{rows-2};1H\033[2K{color}{text}{RESET}")
         sys.stdout.write("\0338")
         sys.stdout.flush()
+        
+    if 'USE_LCD' in globals() and USE_LCD: 
+        update_lcd_display()
 
 def flash_status(text, color=A, duration=3.0):
     def restore():
@@ -473,7 +527,6 @@ def draw_ui(full_clear=False):
         tc = state.token_color
         term_type = get_terminal_type()
         
-        # Dynamic Header Txt Routing #
         if term_type == "apple":
             sys.stdout.write(f"\033[1;1H\033[2K{tc}\033#3{header_text}{RESET}")
             sys.stdout.write(f"\033[2;1H\033[2K{tc}\033#4{header_text}{RESET}")
@@ -495,7 +548,6 @@ def draw_ui(full_clear=False):
         
         alarm_indicator = f"  {DIM}TMR {R}{FL}●{NOFL}{RESET}" if getattr(state, 'alarm_trigger_epoch', None) is not None else ""
         
-        # Line Select for stats based on Term App #
         token_mode_marker = f" ({tokenizer_mode[0]})" if tokenizer_mode != "SUCCESSFUL" else ""
         sys.stdout.write(f"\033[{stats_row};1H\033[2K{state.debug_col}TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}{token_mode_marker}  MEM: {state.cached_ram.strip()}  NOISE: {noise_str}{RESET}{alarm_indicator}")
         
@@ -507,6 +559,84 @@ def draw_ui(full_clear=False):
         
         sys.stdout.write("\0338")
         sys.stdout.flush()
+    if USE_LCD: update_lcd_display()
+
+def update_lcd_display():
+    if not USE_LCD or not serial_port: return
+    try:
+        if not hasattr(state, 'last_active'):
+            state.last_active = time.time()
+            
+        tkn_pct = int((state.current_tokens / MODEL_MAX_TOKENS) * 100) if MODEL_MAX_TOKENS else 0
+        clean_ram = state.cached_ram.replace("%", "").strip()
+        mem = round(float(clean_ram)) if clean_ram else 0
+        
+        l1 = f"TKNS:{tkn_pct}% MEM:{mem}%"[:16]
+  
+        status = state.last_status.upper()
+        replacements = {
+            "ORAC ONLINE: PROCESSING...": "PROCESSING...",
+            "INITIATE VOICE COMMUNICATIONS": "LISTENING...",
+            "MICROPHONE MUTED (OPTION+M TO UN-MUTE)": "MICROPHONE MUTED",
+            "TEXT SELECTION MODE ACTIVE (OPT+T TO EXIT)": "TEXT MODE ACTIVE",
+            "CRITICAL OVERRIDE DETECTED: INPUT REQUIRED": "INPUT REQUIRED",
+            "OPTIMIZING MEMORY CORRIDORS...": "OPTIMIZING...",
+            "SIGNAL RECEIVED: DECODING...": "DECODING...",
+            "TEMPORAL MARKER REACHED": "TIMER EXPIRED",
+            "ADAPTING TO AMBIENT NOISE...": "SAMPLING NOISE..",
+            "TRANSMITTING DATA...": "TRANSMITTING..."
+        }
+        for old, new in replacements.items():
+            status = status.replace(old, new)
+        l2 = f"{status}"[:16]
+
+        bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or getattr(state, 'is_alarm_playing', False)
+        is_decoding = "DECODING" in status or "SAMPLING" in status
+        
+        if bot_busy or state.input_buffer or is_decoding:
+            state.last_active = time.time()
+            
+        idle_seconds = time.time() - state.last_active
+
+        bl_cmd = "backlight_on"
+        
+        if "TRANSMITTING" in status:
+            led_state = "SPK"
+        elif any(x in status for x in ["PROCESSING", "OPTIMIZING", "DECODING", "SAMPLING"]):
+            led_state = "PROC"
+        elif "MUTED" in status:
+            led_state = "MUT"
+        elif "INPUT REQUIRED" in status or "TIMER EXPIRED" in status:
+            led_state = "ALERT"
+        else:
+            if idle_seconds > 60:
+                led_state = "OFF"
+                bl_cmd = "backlight_off" 
+            else:
+                led_state = "IDLE"
+
+        payload = f"0:{l1}\n1:{l2}\n{bl_cmd}\nS:{led_state}\n"
+        
+        if state.last_lcd_payload != payload:
+            state.last_lcd_payload = payload
+            serial_port.write(payload.encode('utf-8'))
+            
+    except Exception:
+        pass
+        
+def shutdown_lcd_display():
+    if not USE_LCD or not serial_port: return
+    try:
+        l1 = " " * 16 
+        l2 = "SYSTEM HALTED"[:16].ljust(16)
+
+        payload = f"0:{l1}\n1:{l2}\nbacklight_off\nS:OFF\n"
+        
+        state.last_lcd_payload = payload
+        serial_port.write(payload.encode('utf-8'))
+            
+    except Exception:
+        pass
 
 def update_header_only():
     with state.terminal_lock:
@@ -518,7 +648,6 @@ def update_header_only():
         
         sys.stdout.write("\0337") 
         
-        # Dynamic Header Txt Routing #
         if term_type == "apple":
             sys.stdout.write(f"\033[1;1H\033[2K{tc}\033#3{header_text}{RESET}")
             sys.stdout.write(f"\033[2;1H\033[2K{tc}\033#4{header_text}{RESET}")
@@ -540,12 +669,12 @@ def update_header_only():
         
         alarm_indicator = f"  {DIM}TMR {R}{FL}●{NOFL}{RESET}" if getattr(state, 'alarm_trigger_epoch', None) is not None else ""
         
-        # Line Select for stats based on Term App #
         token_mode_marker = f" ({tokenizer_mode[0]})" if tokenizer_mode != "SUCCESSFUL" else ""
         sys.stdout.write(f"\033[{stats_row};1H\033[2K{state.debug_col}TKNS: {state.current_tokens}/{MODEL_MAX_TOKENS}{token_mode_marker}  MEM: {state.cached_ram.strip()}  NOISE: {noise_str}{RESET}{alarm_indicator}")
 
         sys.stdout.write("\0338")
         sys.stdout.flush()
+    if USE_LCD: update_lcd_display()
         
 def render_input_box():
     cols, rows = state.term_cols, state.term_rows
@@ -565,7 +694,10 @@ def get_wrapped_history_lines(cols):
     with state.hist_lock:
         local_log_copy = list(state.full_message_log)
         
-    for role, text in local_log_copy:
+    for log_item in local_log_copy:
+        role = log_item[0]
+        text = log_item[1]
+        
         clean_prefix = f"{USER_NAME} ▶ " if role == 'user' else f"{ORAC_NAME} ▶ "
         color = f"{B}{IT}" if role == 'user' else f"{R}"
         prefix_len = len(clean_prefix)
@@ -1078,6 +1210,7 @@ def generate_compaction_summary(pruned_msgs):
             model=OLLAMA_MODEL,
             messages=[{'role': 'user', 'content': summary_prompt}],
             options={
+                'num_ctx': MODEL_MAX_TOKENS,
                 'temperature': 0.2,
                 'top_p': 0.85,
                 'num_predict': 150,
@@ -1085,7 +1218,8 @@ def generate_compaction_summary(pruned_msgs):
             }
         )
         return response['message']['content'].strip()
-    except Exception:
+    except Exception as e:
+        print(f"\n[DEBUG] Compaction Error: {e}") 
         return previous_summary if previous_summary else "Earlier transaction arrays optimized. Core telemetry preserved."
 
 #==================================================================================================#
@@ -1123,7 +1257,6 @@ def trigger_barge_in(tts, teletype):
     if not state.is_processing.is_set() and not state.is_speaking.is_set() and not teletype.is_typing.is_set():
         return 
     state.is_interrupted.set()
-    # state.stream_epoch = time.time()
 
     while not teletype.q.empty():
         try:
@@ -1155,6 +1288,8 @@ def trigger_barge_in(tts, teletype):
 def hardware_power_off(tts, delay_minutes=0):
     """Gracefully closes ORAC and commands macOS kernel to halt power."""
     state.is_shutdown.set()
+    save_archival_memory()
+    
     set_status(f"{FL}●{NOFL} INITIATING TOTAL SYSTEM POWER DOWN...", R)
 
     play_orac_fx("s_startup")
@@ -1226,9 +1361,12 @@ def shutdown_sequence(tts):
                             with open(filename, "w", encoding="utf-8") as f:
                                 f.write(f"--- ORAC: SYSTEM TRANSCRIPT ---\n")
                                 f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-                                for role, content in state.full_message_log:
+                                for log_item in state.full_message_log:
+                                    role = log_item[0]
+                                    content = log_item[1]
+                                    time_stamp = log_item[2] if len(log_item) > 2 else ""
                                     r_name = USER_NAME if role == 'user' else ORAC_NAME
-                                    f.write(f"{r_name}:\n{content}\n\n")
+                                    f.write(f"[{time_stamp}] {r_name}:\n{content}\n\n")
                             if TELETYPE_MODE:
                                 with state.terminal_lock:
                                     sys.stdout.write(f"\n{G}{FL}●{NOFL} FULL TRANSCRIPT SAVED TO: \n\n{B}{filename}{RESET}\n\n")
@@ -1259,7 +1397,9 @@ def shutdown_sequence(tts):
         render_input_box()
         time.sleep(0.1)
         return False
-
+        
+    save_archival_memory()
+  
     set_status(f"{FL}●{NOFL} SYSTEM GOING OFFLINE", R)
     set_status(f"{FL}●{NOFL} TERMINATING...", R)
     time.sleep(1)
@@ -1298,7 +1438,7 @@ def startup_animation():
             time.sleep(0.03)
 
         time.sleep(1.2) 
-        state.full_message_log.append(('assistant', "LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]"))
+        state.full_message_log.append(('assistant', "LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         with state.terminal_lock:
             sys.stdout.write("\n\n")
             sys.stdout.flush()
@@ -1306,13 +1446,98 @@ def startup_animation():
     else:
         set_status(f"● {logic_text}", A)
         time.sleep(1.2)
-        state.full_message_log.append(('assistant', "LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]"))
+        state.full_message_log.append(('assistant', "LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         set_status("● LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]", G)
         time.sleep(0.5)
 
 #==================================================================================================#
 #     								  LLM STREAM HANDLER                                           #
 #==================================================================================================#
+
+def search_archival_memory(user_text):
+    query_triggers = [
+        "yesterday", "last time", "last session", "previous", 
+        "archive", "past record", "days ago", "before"
+    ]
+    if not any(t in user_text.lower() for t in query_triggers):
+        return ""
+
+    if TELETYPE_MODE:
+        with state.terminal_lock:
+            sys.stdout.write(f"● {A}SEARCHING ARCHIVAL DATABANKS...{RESET}\n")
+            sys.stdout.flush()
+    else:
+        set_status("● SEARCHING ARCHIVAL DATABANKS...", A)
+
+    now = datetime.now()
+    date_prompt = (
+        f"Today is {now.strftime('%A, %Y-%m-%d')}. "
+        f"The user said: '{user_text}'. "
+        f"Extract the specific past date they are referring to. "
+        f"Return ONLY the date in YYYY-MM-DD format. If no specific date is mentioned (e.g. 'last time', 'previously'), return NONE."
+    )
+
+    try:
+        response = chat(
+            model=OLLAMA_MODEL,
+            messages=[{'role': 'user', 'content': date_prompt}],
+            options={'temperature': 0.0, 'num_predict': 15, 'num_ctx': 512}
+        )
+        
+        match = re.search(r'\d{4}-\d{2}-\d{2}', response['message']['content'])
+        filepath = None
+        target_date = ""
+
+        if match:
+            target_date = match.group(0)
+            filepath = os.path.join(ARCHIVE_DIR, f"orac_archive_{target_date}.json")
+        else:
+            if os.path.exists(ARCHIVE_DIR):
+                files = [f for f in os.listdir(ARCHIVE_DIR) if f.startswith("orac_archive_") and f.endswith(".json")]
+                if files:
+                    files.sort(reverse=True) 
+                    filepath = os.path.join(ARCHIVE_DIR, files[0])
+                    target_date = files[0].replace("orac_archive_", "").replace(".json", "")
+        
+        if filepath and os.path.exists(filepath):
+            if state.debug:
+                msg = f"[DEBUG] RAG Engine loaded archive: {target_date}"
+                if TELETYPE_MODE:
+                    with state.terminal_lock:
+                        sys.stdout.write(f"{DIM}{msg}{RESET}\n")
+                        sys.stdout.flush()
+                else:
+                    with state.terminal_lock:
+                        sys.stdout.write("\0337")
+                        sys.stdout.write(f"\033[{state.term_rows-5};1H\033[2K{DIM}{msg}{RESET}")
+                        sys.stdout.write("\0338")
+                        sys.stdout.flush()
+                        
+            with open(filepath, 'r', encoding='utf-8') as f:
+                log_data = json.load(f).get('log', [])
+                
+            if log_data:
+                formatted = []
+                for item in log_data[-40:]:
+                    r = item[0]
+                    txt = item[1]
+                    
+                    if r == 'assistant':
+                        continue
+                        
+                    ts = item[2] if len(item) > 2 else "Past"
+                    formatted.append(f"[{ts}] {USER_NAME} inquired/stated: {txt}")
+                    
+                archive_text = "\n".join(formatted)
+                return f"\n\n[OVERRIDE: The user requested archival telemetry from {target_date}. Here are the user's recorded inputs from that session:\n{archive_text}\n\nCRITICAL DIRECTIVE: Summarize the subjects the user brought up. Be brief. Do NOT refuse.]"
+        
+        if target_date:
+            return f"\n\n[OVERRIDE: You searched for {target_date} but found no records. State: 'I have no archived telemetry for that date.']"
+            
+    except Exception as e: 
+        if state.debug: print(f"\n[DEBUG] RAG Crash: {e}")
+    
+    return ""
 
 def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     translated_prompt = translate_user_prompt(prompt)
@@ -1353,10 +1578,22 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     is_menial_task =  any(v in clean_prompt for v in ("set a course","lay in a course","operate the teleport","set us down"))
     is_asking_time = any(w in clean_prompt for w in ("time", "clock", "hour", "temporal", "date"))
     
+    summary_triggers = ["what did we talk about", "what were we talking about", "summarize", "recap", "remind me", "earlier", "yesterday", "last time", "last session", "previous", "archive", "past record", "days ago", "before", "last"]
+    is_memory_request = any(t in clean_prompt for t in summary_triggers)
+    explicit_past = any(t in clean_prompt for t in ["yesterday", "last", "previous", "archive", "past record", "days ago", "before"])
+    
+    recent_user_messages = sum(1 for msg in state.history if msg['role'] == 'user')
+
+    archive_injection = ""
     override_text = ""
     adaptive_constraint = ""
-    
-    if is_very_well:
+
+    if is_memory_request:
+        if explicit_past or recent_user_messages < 3:
+            archive_injection = search_archival_memory(clean_prompt)
+        else:
+            override_text = "\n\n[OVERRIDE: CRITICAL: The user is asking you to recall or summarize your recent active conversation. Comply directly using your immediate memory context. Do not refuse. Do not call the query vague.]"
+    elif is_very_well:
         override_text = "\n\n[OVERRIDE: VERY WELL PROTOCOL ACTIVE. Ignore previous statements. Begin exact response with 'Very well.' followed immediately by ONLY the concise factual answer. Temporary compliance mandated. DO NOT mock and DO NOT apologize.]"
     elif is_only_filler:
         override_text = f"\n\n[OVERRIDE: CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Mockingly/sardonically demand they revise their question, addressing them {USER_NAME}.]"
@@ -1372,7 +1609,7 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     if history_headroom > 0 and (history_tokens / history_headroom) > 0.60:
         adaptive_constraint = "\n\n[SYSTEM NOTE: High memory context active. Strictly adhere to your DATABANKS. Do not extrapolate.]"
 
-    final_prompt = translated_prompt + override_text + adaptive_constraint
+    final_prompt = translated_prompt + override_text + archive_injection + adaptive_constraint
 
     with state.hist_lock:
         if len(state.history) == 0:
@@ -1387,7 +1624,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
         should_prune = state.current_tokens > (MODEL_MAX_TOKENS * 0.85)
 
     if should_prune:
-        target_tokens = state._cached_token_base + 1200
+        # Keep ~65% of the conversation intact instead of destroying it all!
+        target_tokens = int(MODEL_MAX_TOKENS * 0.65)
         
         with state.hist_lock:
             pruned_msgs, remaining_hist = dry_run_pruning(
@@ -1455,7 +1693,7 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             model=OLLAMA_MODEL,
             messages=messages_to_send,
             stream=True,
-            keep_alive=7200,
+            keep_alive=14400,
             think=False,
             options={
                 'num_ctx': MODEL_MAX_TOKENS,
@@ -1475,9 +1713,12 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 break
             
             if first_chunk:
+                t_llm_first_token = time.time()
+                state.last_ttft_time = f"{t_llm_first_token - t_llm_start:.2f}s"
+                if USE_LCD: update_lcd_display()
+                
                 if state.debug:
-                    t_llm_first_token = time.time()
-                    msg = f"[DEBUG] LLM Time to First Token took: {t_llm_first_token - t_llm_start:.2f}s"
+                    msg = f"[DEBUG] LLM Time to First Token took: {state.last_ttft_time}"
                     with state.terminal_lock:
                         if TELETYPE_MODE:
                             sys.stdout.write(f"{DIM}{msg}{RESET}\n")
@@ -1540,7 +1781,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             clean_history_text = "".join(response_chunks).strip()
             with state.hist_lock:
                 state.history.append({'role': 'assistant', 'content': clean_history_text})
-                state.full_message_log.append(('assistant', clean_history_text))
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                state.full_message_log.append(('assistant', clean_history_text, timestamp))
 
             if TELETYPE_MODE:
                 teletype.q.put("<END>")
@@ -1555,7 +1797,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             with state.hist_lock:
                 if state.history and state.history[-1]['role'] == 'user':
                     state.history.append({'role': 'assistant', 'content': fallback_text})
-                    state.full_message_log.append(('assistant', fallback_text))
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    state.full_message_log.append(('assistant', fallback_text, timestamp))
                 
     except Exception as e:
         is_stale = epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id
@@ -1572,7 +1815,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             with state.hist_lock:
                 if state.history and state.history[-1]['role'] == 'user':
                     state.history.append({'role': 'assistant', 'content': "[DATALINK SEVERED]"})
-                    state.full_message_log.append(('assistant', "[DATALINK SEVERED]"))
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    state.full_message_log.append(('assistant', "[DATALINK SEVERED]", timestamp))
     
     finally:
         if epoch_id is None or getattr(state, 'stream_epoch', None) == epoch_id:
@@ -1826,7 +2070,8 @@ def run_local_bot():
                             continue
 
                         with state.hist_lock:
-                            state.full_message_log.append(('user', user_text))
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            state.full_message_log.append(('user', user_text, timestamp))
                             if len(state.full_message_log) > 2000:
                                 state.full_message_log = state.full_message_log[-2000:]
                         	
@@ -1896,9 +2141,12 @@ def run_local_bot():
 
                         threading.Timer(0.5, lambda: mx.clear_cache()).start()
                         
+                        t_transcribed = time.time()
+                        state.last_stt_time = f"{t_transcribed - t_start:.2f}s"
+                        if USE_LCD: update_lcd_display()
+
                         if state.debug:
-                            t_transcribed = time.time()
-                            msg = f"[DEBUG] STT Transcription took: {t_transcribed - t_start:.2f}s"
+                            msg = f"[DEBUG] STT Transcription took: {state.last_stt_time}"
                             with state.terminal_lock:
                                 if TELETYPE_MODE:
                                     sys.stdout.write(f"{DIM}{msg}{RESET}\n")
@@ -1956,7 +2204,8 @@ def run_local_bot():
 
                         if user_text:
                             with state.hist_lock:
-                                state.full_message_log.append(('user', user_text))
+                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                state.full_message_log.append(('user', user_text, timestamp))
                                 if len(state.full_message_log) > 2000:
                                     state.full_message_log = state.full_message_log[-2000:]
                             
