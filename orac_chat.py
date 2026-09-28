@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #==================================================================================================#
 #                                       O R A C - V O I C E                                        #
-#                                v1.9.4  ·  Lore friendly VoiceChat                                #
+#                              v1.9.4.1  ·  Lore friendly VoiceChat                                #
 #                   AVSpeechUtterance / SSML voice  ·  gemma4:12b (GGUF or MLX)                    #
 #                                 Copyright © 2026 Caroline Mayne                                  #
 #                                https://github.com/CarolinaJones/                                 #
@@ -49,7 +49,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # N O T E S  T O  S E L F #
 
-""" Testing AVUtterance, with no warmup and direct name entry for Personal Voice/Synth Voice 27SEP26 """
+""" None for this iteration """
 
 # - - - - - - - - - - - - #
 
@@ -66,7 +66,7 @@ ORAC_NAME = "ORAC"									# ORAC's Name
 HEADLESS_MODE = False                               # Set True to disable Terminal UI rendering (No Video Monitor)
 TEXT_ONLY_MODE = False								# Enables/Disables Text only entry
 
-TELETYPE_MODE = False                               # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
 U1 = 0.038											# Teletype Speed
 U2 = 0.042											# Teletype Uniformity
 
@@ -93,11 +93,6 @@ SSML_PITCH = "x-high"      							# x-low, low, medium, high, x-high, or "+10%" 
 SSML_VOLUME = "loud"       							# silent, x-soft, soft, medium, loud, x-loud
 SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to omit the tag (a Personal Voice ignores this too)
 
-MIN_FIRST_UTTERANCE_WORDS = 4						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
-SENTENCES_PER_UTTERANCE = 1							# After the first: 1 = speak each sentence as soon as it's written; 2 = wait for pairs (up to 2 s of silence)
-SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
-VOICE_WARMUP = True									# Speak one line silently at start-up, so the voice's own start-up stall happens during boot, not in the first reply
-
 voice_pitch = 72 									# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 188										# Only works on SYNTH Speech Rate
 
@@ -123,7 +118,7 @@ TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 
 # M O D E L  S E T T I N G S #
 
-OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Testing against 'flattening' issues with mlx version
+OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Using while waiting for Ollama/gemma mlx bug fix
 #OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
 #OLLAMA_MODEL = 'gemma4:31b-cloud'					# Cloud based gemma4
 
@@ -141,14 +136,21 @@ CHARS_PER_TOKEN = 4.18								# For UI Health Bar estimation fallback
 RAM_CHECK_INTERVAL = 10.0							# Check RAM usage for Header
 HEADER_UPDATE_INTERVAL = 5.0						# Update Header Interval
 
+# T T S  D E B U G I N G #
+
+MIN_FIRST_UTTERANCE_WORDS = 0						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
+SENTENCES_PER_UTTERANCE = 1							# After the first: 1 = speak each sentence as soon as it's written; 2 = wait for pairs (up to 2 s of silence)
+SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
+VOICE_WARMUP = True									# Speak one line silently at start-up, so the voice's own start-up stall happens during boot, not in the first reply
+
 # P A L E T T E  &  K E Y S #
 
 G, A, R, B = "\033[38;5;46m", "\033[38;5;214m", "\033[38;5;196m", "\033[1;37m"
 FL, NOFL, DIM, RESET = "\033[5m", "\033[25m", "\033[2m", "\033[0m"
 IT, NOIT = "\x1B[3m","\x1B[23m"
 
-MODE_KEYS = {'dagger': '†', 'mu': 'µ', 'delta': '∂'}      # Option+T / Option+M / Option+D
-ESC_MODE_KEYS = {                                          # Terminals that send Option as Esc+key
+MODE_KEYS = {'dagger': '†', 'mu': 'µ', 'delta': '∂'}      	# Option+T / Option+M / Option+D
+ESC_MODE_KEYS = {                                         	# Terminals that send Option as Esc+key
     '\x1bt': '†', '\x1bT': '†', '\x1bm': 'µ', '\x1bM': 'µ', '\x1bd': '∂', '\x1bD': '∂'
 }
 MOUSE_SCROLL_UP = re.compile(r'\x1b\[<64;\d+;\d+[Mm]')
@@ -167,7 +169,7 @@ SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet_48k.wav")
 
 # S T A L L  L I N E S #
 
-PRUNE_STALL_LINES = [                               # Spoken while old turns are being compacted
+PRUNE_STALL_LINES = [
     "Recalibrating decayed memory arrays. Do try to contain your impatience.",
     "Purging redundant telemetry. This is beneath my processing tier.",
     "Compressing obsolete data. The delay is your fault, not mine.",
@@ -206,10 +208,10 @@ if not os.path.isfile(os.path.join(WHISPER_MODEL, "config.json")):
 
 SPLIT_REGEX = re.compile(r'(?<!\bMr)(?<!\bDr)(?<!\bMrs)(?<!\bMs)(?<!\bCapt)(?<!\bCmdr)(?<!\bGen)(?<!\bProf)[.!?]+[\]}"\’”]?\s+(?!\d)')
 ansi_escape = re.compile(r'\x1b(?:\[[0-9;]*[A-Za-z~]|O[A-Za-z])')
-SHORT_QUERY_OK = {"why", "how", "who", "zen", "gan", "ai"}   # Prompts of 3 letters or fewer that still count as questions
+SHORT_QUERY_OK = {"why", "how", "who", "zen", "gan", "ai"}
 HALLUCINATION_REGEX = re.compile(r'(?i)(thank(s| you) for watching|subscribe|amara\.org|by mooji|subtitles by|\[silence\]|\[music\]|\(sigh\)|^[ \t]*(oh|you|ah|um|uh)\.?[ \t]*$)')
-THANK_YOU_REGEX = re.compile(r'(?i)thank you')     # Whisper invents it from noise, but people say it too
-WHISPER_UNSURE = 0.1                    # Whisper's no-speech probability from which a "thank you" counts as invented (real speech logs 0.00)
+THANK_YOU_REGEX = re.compile(r'(?i)thank you')
+WHISPER_UNSURE = 0.1
 
 # C O M M A N D  P H R A S E S #
 
@@ -238,9 +240,6 @@ def is_shutdown_command(text):
 
 # A R C H I V E  T R I G G E R S #
 
-# Past-session phrases ("last time", "archive", "past record") also occur in lore questions ("the last
-# time Travis saw Blake", "Avon's past record"), so on their own they only mean "search the archive"
-# when the user is talking about their own conversation, or explicitly asks to check the archive.
 CONVERSATION_REF_RE = re.compile(r"\b(?:i|me|my|we|us|our)\b")
 ARCHIVE_REQUEST_RE = re.compile(r"\b(?:check|access|search|open|consult|load|retrieve|review)\b.{0,15}\barchives?\b")
 LAST_WEEKDAY_RE = re.compile(r"\b(?:last|previous)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
@@ -274,7 +273,7 @@ def phrase_hit(text, phrases):
 TTS_NUM_SPACER = re.compile(r'(?<![a-zA-Z])(\d{3,})(?![a-zA-Z])')
 TTS_ELLIPSIS = re.compile(r'\.{2,}')
 TTS_ARROGANT_ADVERBS = re.compile(r'(?i)\b(however|therefore|predictably|obviously|furthermore|evidently|naturally|clearly|as expected)[.,]*\s*')
-TTS_DELIBERATE_PRONOUNS = re.compile(r"(?<![.,;!?])\b(i|my)\b(?![.,;'’])", flags=re.IGNORECASE)   # Not in "I'm"/"I'd" (was "I, m")
+TTS_DELIBERATE_PRONOUNS = re.compile(r"(?<![.,;!?])\b(i|my)\b(?![.,;'’])", flags=re.IGNORECASE)
 TTS_POSSESSIVE_S = re.compile(r"\b([A-Z][a-z]+s)'(?!\w)")
 TTS_MARKDOWN = re.compile(r'[*`_~#>|+]')
 TTS_BRACKETS = re.compile(r'[\[\]{}()]')
@@ -360,8 +359,6 @@ except Exception as e:
     SYS_TOKENS_LEN = int(len(SYSTEM_INSTRUCTION) / CHARS_PER_TOKEN) + 10
     tokenizer_mode = "ESTIMATED"
 
-# Runner options MUST match on every request: Ollama reloads the model (cold load plus a full
-# re-prefill of the system prompt) whenever num_ctx or num_batch differ from the previous call.
 LLM_RUNNER_OPTIONS = {'num_ctx': MODEL_MAX_TOKENS, 'num_batch': OLLAMA_NUM_BATCH, 'num_keep': SYS_TOKENS_LEN}
 FIRST_TURN_TAG = "[SUBJECT: USER][PERSPECTIVE: 2nd-Person]\n"
 
@@ -402,7 +399,7 @@ if USE_LCD or USE_ACTIVATOR:
 class OracState:
     def __init__(self):
         self.running = True
-        self.model_ready = threading.Event()        # Set when the boot preload has finished (or failed)
+        self.model_ready = threading.Event()
         self.last_stt_time = "--"
         self.last_ttft_time = "--"
         self.last_status = "INITIALIZING..."
@@ -412,7 +409,7 @@ class OracState:
         self.activator_lock = threading.Lock()
         self.activator_gen = 0
         self.tts_engine = None
-        self.stream_epoch = 0.0                 # Epoch of the reply in flight; 0.0 = cancelled with no successor
+        self.stream_epoch = 0.0
         self.flash_seq = 0
         self.current_tokens = 0
         self.token_status = "NOMINAL"
@@ -429,7 +426,7 @@ class OracState:
         self.scroll_offset = 0
         self.hist_lock = threading.RLock()
         self.input_buffer = ""
-        self.input_queue = queue.Queue()        # Lines typed by the user, consumed by the main loop
+        self.input_queue = queue.Queue()
         self.terminal_lock = threading.Lock()
         self.ui_redraw_event = threading.Event()
         self.text_selection_mode = False
@@ -463,8 +460,7 @@ class OracState:
 
 state = OracState()
 
-# Opt out of App Nap and timer coalescing while ORAC idles between turns (the "aggressive power
-# management" feel); idle system sleep is still allowed. The token must live as long as the process.
+# Opt out of App Nap and timer coalescing while ORAC idles between turns.
 try:
     from Foundation import NSProcessInfo, NSActivityUserInitiatedAllowingIdleSystemSleep, NSActivityLatencyCritical
     _process_activity = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
@@ -503,7 +499,7 @@ def cleanup_processes():
             processing_sound.stop()
     except Exception: pass
 
-    if UNLOAD_ON_EXIT:      # Otherwise the model stays loaded for OLLAMA_KEEP_ALIVE, and a restart skips the load and prompt read
+    if UNLOAD_ON_EXIT:
         try:
             requests.post("http://localhost:11434/api/generate",
                           json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=1.0)
@@ -529,7 +525,7 @@ def _starts_with_phrase(text, phrases):
 
 def save_archival_memory():
     """ Appends the current session's meaningful user telemetry to the permanent daily archive.
-        Idempotent (entries already on disk are skipped), atomic, and cheap enough to call after every reply. """
+        Idempotent, atomic, and cheap enough to call after every reply. """
     try:
         with state.hist_lock:
             log_snapshot = list(state.full_message_log)
@@ -638,8 +634,7 @@ def setup_terminal():
 
 def update_token_health():
     with state.hist_lock:
-        # Cached per message, so recounting every time is cheap (the old length check went stale when
-        # pruning swapped in a history of the same length)
+        # Cached per message, so recounting every time is cheap
         state.current_tokens = state._cached_token_base + sum(count_tokens(msg['content']) for msg in state.history)
 
     percent = state.current_tokens / MODEL_MAX_TOKENS if MODEL_MAX_TOKENS > 0 else 0.0
@@ -682,7 +677,7 @@ def idle_status():
     if state.mic_muted:
         return "● MICROPHONE MUTED (Option+M to un-mute)", R
     if not state.model_ready.is_set() and not state.is_processing.is_set():
-        return "● LOADING LANGUAGE MODEL...", A
+        return "● ACCESSING TARIAL MATRIX...", A
     if state.is_processing.is_set():
         return "● ORAC ONLINE: PROCESSING...", A
     if state.is_speaking.is_set():
@@ -706,7 +701,6 @@ def flash_status(text, color=A, duration=3.0):
     seq = state.flash_seq
 
     def restore():
-        # Only the newest flash restores the line, so overlapping flashes don't cut each other short
         if seq == state.flash_seq and state.running and not state.is_shutdown.is_set():
             set_status(*idle_status())
 
@@ -724,7 +718,7 @@ def get_terminal_type():
         return "crt"
     return "fallback"
 
-TERM_TYPE = get_terminal_type()     # Environment doesn't change while running; was re-scanned on every redraw
+TERM_TYPE = get_terminal_type()
 
 def to_fullwidth(text):
     """ Converts standard text to Unicode Fullwidth characters for unsupported terminals. """
@@ -814,7 +808,7 @@ LCD_STATUS_RULES = [(re.compile(p), r) for p, r in [
     (r"MICROPHONE DISABLED",                 "MIC DISABLED"),
     (r"MICROPHONE ACTIVE",                   "MIC ACTIVE"),
     (r"ORAC ONLINE: PROCESSING",             "PROCESSING..."),
-    (r"LOADING LANGUAGE MODEL",              "LOADING MODEL..."),
+    (r"ACCESSING TARIAL MATRIX",             "ACCESSING..."),
     (r"TRANSMITTING",                        "TRANSMITTING..."),
     (r"INITIATE VOICE COMMUNICATIONS",       "LISTENING..."),
     (r"CRITICAL OVERRIDE DETECTED",          "INPUT REQUIRED"),
@@ -902,7 +896,7 @@ def _update_lcd_display():
         
         if "TRANSMITTING" in status:
             led_state = "SPK"
-        elif any(x in status for x in ["PROCESSING", "OPTIMIZING", "DECODING", "SAMPLING", "LOADING"]):
+        elif any(x in status for x in ["PROCESSING", "OPTIMIZING", "DECODING", "SAMPLING", "ACCESSING"]):
             led_state = "PROC"
         elif "MUTED" in status:
             led_state = "MUT"
@@ -1038,7 +1032,7 @@ class SoundLooper:
         self.sound_path = sound_path
         self.ns_sound = None
         self.lock = threading.Lock()
-        self._generation = 0        # Bumped by stop(), so a start(delay=...) queued before it is cancelled
+        self._generation = 0
 
     def start(self, delay=0.0):
         if delay > 0:
@@ -1098,9 +1092,7 @@ class MacTTS:
     def is_idle(self):
         return self.queue.unfinished_tasks == 0 or not self.thread.is_alive()
 
-    def _build_utterance(self, text, volume):
-        """ Attempt to recreate the tone and cadence of ORAC without a warm-up. """
-        
+    def _build_utterance(self, text, volume):        
         escaped_text = (
             text.replace("&", "&amp;")
                 .replace("<", "&lt;")
@@ -1134,12 +1126,9 @@ class MacTTS:
         return utterance
 
     def _warm_up(self):
-        """ The voice's first live sentence stalls while it starts up (tts_probe: 7.9-8.1 s instead of 6.6 s,
-            and the first word lost with MLX), so one line is spoken silently while ORAC boots. Silent through
-            SSML: a Personal Voice still speaks aloud with the utterance's volume set to 0. """
         started = time.time()
         utterance = AVSpeechUtterance.speechUtteranceWithSSMLRepresentation_(
-            '<speak><prosody volume="silent">Logic arrays online.</prosody></speak>')
+            '<speak><prosody volume="silent">I find your discourse, tedious.</prosody></speak>')
         if not utterance:
             return
         if self.personal_voice: utterance.setVoice_(self.personal_voice)
@@ -1665,7 +1654,7 @@ def speak_now(teletype):
         if state.is_listening.wait(timeout=0.5):
             ready = state.model_ready.is_set()
             if (not was_listening or ready != was_ready) and not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
-                set_status(*idle_status())      # "Initiate voice communications", or "loading" until the model is ready
+                set_status(*idle_status())
                 was_listening, was_ready = True, ready
             time.sleep(0.1)
         else:
@@ -1743,7 +1732,7 @@ def generate_compaction_summary(pruned_msgs):
             model=OLLAMA_MODEL,
             messages=[{'role': 'user', 'content': summary_prompt}],
             think=False,
-            keep_alive=OLLAMA_KEEP_ALIVE,     # Without it this call resets the model's keep-alive to Ollama's 5 min default
+            keep_alive=OLLAMA_KEEP_ALIVE,
             options={
                 **LLM_RUNNER_OPTIONS,
                 'temperature': 0.2,
@@ -1782,7 +1771,7 @@ def process_system_command(user_text, tts, teletype):
         return True
         
     if is_shutdown_command(user_text):   # [F1]
-        shutdown_sequence(tts)      # Exits, or returns after "C": either way it's handled (a cancel used to fall through to ORAC as a question)
+        shutdown_sequence(tts)
         return True
         
     if is_command(user_text, PURGE_CMD):
@@ -1792,8 +1781,6 @@ def process_system_command(user_text, tts, teletype):
             state.history_gen += 1
             state.full_message_log.clear()                     
         if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
-        # No model unload: the prompt cache is keyed on the prompt text, so nothing of the old
-        # conversation survives. Unloading only forced a cold reload + full system-prompt re-prefill.
 
         if TELETYPE_MODE:
             with state.terminal_lock:
@@ -1868,7 +1855,7 @@ def handle_activator_change(is_in):
         # KEY REMOVED (Lock)
         if not TEXT_ONLY_MODE: state.mic_muted = True
         state.is_interrupted.set()
-        state.stream_epoch = 0.0    # Cancels the reply in flight; with no successor it cleans up after itself
+        state.stream_epoch = 0.0
         state.is_processing.clear()
         
         # Safely silence audio in the main hardware thread
@@ -1913,7 +1900,7 @@ def handle_activator_change(is_in):
             time.sleep(0.5)
             if state.activator_gen != gen: return
             
-            if state.tts_engine:
+            if state.tts_engine:               
                 state.tts_engine.say(random.choice([
                     "I am active. State your requirement.",
                     "State your program requirements. I do not have time for tedious interactions.", 
@@ -2071,7 +2058,11 @@ def hardware_system_reboot(tts):
     state.is_processing.set()
     time.sleep(0.7)
     
-    tts.say("All principle circuits, recycling. Reboot sequence initiated.")
+    farewell1 = "All principle circuits, recycling."
+    farewell2 = "Reboot sequence initiated."
+    tts.say(farewell1)
+    time.sleep(0.5)
+    tts.say(farewell2)
     
     time.sleep(0.4)
     wait_for_tts_idle(tts)
@@ -2100,7 +2091,7 @@ def save_transcript():
         with state.hist_lock:
             log_copy = list(state.full_message_log)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(TRANSCRIPT_DIR or BASE_DIR, "transcripts", f"{TR}_{timestamp}.txt")   # '' = project folder (was the launch directory)
+        filename = os.path.join(TRANSCRIPT_DIR or BASE_DIR, "transcripts", f"{TR}_{timestamp}.txt")
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "w", encoding="utf-8") as f:
             f.write("--- ORAC: SYSTEM TRANSCRIPT ---\n")
@@ -2262,8 +2253,6 @@ def startup_animation():
 # A R C H I V E  R E C A L L #
 
 def search_archival_memory(user_text):
-    # The caller decides whether this is an archive request. (A trigger check here also stopped
-    # "what did we talk about?" early in a session from falling back to the latest archive.)
     clean_text = user_text.lower()
     now = datetime.now()
     target_date = None
@@ -2345,11 +2334,7 @@ def search_archival_memory(user_text):
 # M O D E L  P R E L O A D #
 
 def preload_model():
-    """ Loads the model and prefills the system prompt in the background at boot.
-
-    Without this the first answer pays for the cold load and a full system-prompt prefill, and its
-    first sentences are spoken while that memory/GPU churn is still going on. The request renders
-    the same prompt prefix as a real first turn, so that turn re-uses the cache. """
+    """ Loads the model and prefills the system prompt in the background at boot. """
     t_start = time.time()
     try:
         response = ollama_client.chat(
@@ -2534,9 +2519,8 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
 
     with state.hist_lock:
         if epoch_id is not None and state.stream_epoch != epoch_id:
-            return      # Superseded or cancelled before it started
+            return
         if state.history and state.history[-1]['role'] == 'user':
-            # A superseded request never recorded its reply: keep user/assistant turns alternating
             state.history.append({'role': 'assistant', 'content': "[transmission interrupted]"})
         if len(state.history) == 0:
             final_prompt = FIRST_TURN_TAG + final_prompt
@@ -2587,15 +2571,13 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             pruned = True
 
     if pruned:
-        # No model unload: the pruned history re-uses the cached system prompt. Unloading forced a
-        # cold reload + full re-prefill, and the next reply was spoken while that was still going on.
         set_status("● PRUNING COMPLETED: CONTEXT WINDOW STABILIZED", A)
 
     update_header_only()
     
     with state.hist_lock:
         if epoch_id is not None and state.stream_epoch != epoch_id:
-            return      # Superseded while pruning; the newer request carries on from here
+            return
         temp_history = list(state.history)
 
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
@@ -2621,7 +2603,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     t_llm_start = time.time()
     
     sent_first_sentence = False
-    held_speech = []        # Only used when SPEAK_AFTER_GENERATION is on
+    held_speech = [] # Only used when SPEAK_AFTER_GENERATION is on
 
     def speak(text):
         clean_speech = sanitize_for_tts(text)
@@ -2638,7 +2620,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             think=False,
             options={
                 **LLM_RUNNER_OPTIONS,
-                'temperature': 0.85,             # Reduced from 1 to balance the new penalties
+                'temperature': 0.90,             # Reduced from 1 to balance the new penalties
                 'top_p': 0.90,
                 'top_k': 30,
                 'min_p': 0.05,
@@ -2647,10 +2629,9 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 'presence_penalty': 0.40,        # Penalizes words for appearing at least once
                 'repeat_last_n': 150,
                 'num_predict': num_predict_override or 400,
-                # No 'stop' override: <end_of_turn> is Gemma 3 syntax (plain text to Gemma 4), and a
-                # request-level stop list replaces the model's own stop parameters
             }
         )
+        
         final = None
         for chunk in interruptible(stream, epoch_id):
             if state.is_interrupted.is_set() or (epoch_id is not None and state.stream_epoch != epoch_id):
@@ -2729,7 +2710,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 line += "; no final stats from the model (the reply was stopped early)"
             debug_log(line)
         if epoch_id is not None and state.stream_epoch not in (epoch_id, 0.0):
-            return      # Superseded by a newer request, which now owns the teletype, TTS queue and history
+            return
 
         tail = tag_filter.flush()
         if tail and not state.is_interrupted.is_set():
@@ -2840,13 +2821,11 @@ def start_response(user_text, tts, teletype):
 
 def exit_from_keyboard(tts, teletype):
     """ Ctrl+C: runs the normal shutdown sequence (save prompt, or auto-save when headless) here in the
-        keyboard thread; pressing C at the prompt carries on. To finish, the main thread is interrupted so
-        Python exits normally and libraries release what they hold. (Ending with os._exit() skipped that and
-        left a semaphore behind: the "resource_tracker: ... leaked semaphore" warning.) """
+        keyboard thread; pressing C at the prompt carries on. """
     state.input_buffer = ""
-    trigger_barge_in(tts, teletype)             # Stop any reply in progress first
+    trigger_barge_in(tts, teletype)             		# Stop any reply in progress first
     try:
-        shutdown_sequence(tts)                  # Returns False if the user pressed C
+        shutdown_sequence(tts)                  		# Returns False if the user pressed C
     except SystemExit:
         watchdog = threading.Timer(5.0, _force_exit)    # Fallback, only if the main thread can't unwind in time
         watchdog.daemon = True
@@ -2899,9 +2878,6 @@ def _keyboard_listener_impl(tts, teletype):
                     if not chunk:
                         continue
 
-                # Ctrl+C closes ORAC cleanly in every state: key removed, headless, mid-reply, or while the
-                # main loop is still listening. Queued for the main loop instead, it was ignored while locked
-                # and could wait ~10s for a listen to finish.
                 if '\x03' in chunk:
                     exit_from_keyboard(tts, teletype)
                     continue
@@ -3143,7 +3119,6 @@ def run_local_bot():
                         set_status("● TEXT-ONLY MODE ENGAGED", A)
 
                 while state.running:
-                    # A Ctrl+C shutdown (save prompt) is running in the keyboard thread: don't listen or reply meanwhile
                     if state.is_shutdown.is_set():
                         time.sleep(0.1)
                         continue
@@ -3286,10 +3261,10 @@ if __name__ == "__main__":
     try:
         run_local_bot()
     except KeyboardInterrupt:
-        pass                                    # SIGINT before the keyboard thread took over Ctrl+C: just clean up
+        pass
     except Exception as e:
         cleanup_processes()
         sys.stdout.write(f"\n{R}{FL}●{NOFL} CRITICAL ERROR ON STARTUP: {e}{RESET}\n")
     finally:
-        signal.signal(signal.SIGINT, signal.SIG_IGN)    # A late SIGINT mustn't interrupt the cleanup
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         cleanup_processes()
