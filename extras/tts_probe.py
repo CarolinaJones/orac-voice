@@ -59,7 +59,8 @@ rate them blind. It compares the takes' length and, from the voice's own word ti
 started; it also records every take through the microphone ORAC listens with (another with --mic N, see
 --list-mics) to compare pitch, pitch range, and the sound itself: a null test (the take lined up with the
 first one to a fraction of a sample, level-matched and subtracted) and octave-band tone balance. Stay quiet
-while it runs (about five minutes). The takes are saved as 24-bit .wav files at the input's own rate.
+while it runs (about five minutes). Each take is saved whole, as heard (the line before the sentence
+included), as a 24-bit .wav file at the input's own rate.
 
 For an exact comparison, capture the sound digitally rather than through the air: install BlackHole
 (brew install blackhole-2ch), create a Multi-Output Device in Audio MIDI Setup with your speaker and
@@ -1275,10 +1276,11 @@ def heard_by_mic(x, rate):
     """What the recording made of one take: its level and, if it heard the voice, the pitch, pitch range, the
     voice itself (for the null test) and its octave-band balance."""
     import numpy as np
-    heard = {"level": None, "pitch": None, "range": None, "speech": None, "bands": None}
+    heard = {"level": None, "pitch": None, "range": None, "speech": None, "bands": None, "clipped": 0}
     if len(x):
         loudness = float(np.percentile(np.abs(x), 99.5))
         heard["level"] = 20 * math.log10(max(loudness, 1e-6))
+        heard["clipped"] = int(np.count_nonzero(np.abs(x) >= 0.999))
         if loudness >= HEARD_LEVEL:
             s = analyse_samples(x / loudness, rate)
             speech = speech_part(x, rate)
@@ -1375,11 +1377,14 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
             name = f"{key}{r}"
             print(f"  take {number}/{len(order)}: {quiet:.0f} s of silence, then listen", flush=True)
             time.sleep(quiet)
+            take_start, line = time.perf_counter(), None
             with objc.autorelease_pool():
                 if key == "A":
                     time.sleep(silent_line + 0.1)   # As long as C's silent line, so A and C can't be told apart
                 else:
-                    speak_live(synth, times, make_utterance(before_ssml[key], voice, None))
+                    line_call = time.perf_counter()
+                    line_result = speak_live(synth, times, make_utterance(before_ssml[key], voice, None))
+                    line = (times.started or line_call, times.finished or line_call + line_result["wall"])
                     time.sleep(0.1)             # ORAC's pause between sentences
                 t_call = time.perf_counter()
                 result = speak_live(synth, times, make_utterance(sentence, voice, None))
@@ -1388,12 +1393,14 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
             take = {"number": number, "name": name, "key": key, "before": before, "mic": None, "heard": "-",
                     "length": finished - started if times.started and times.finished else None,
                     "onsets": word_onsets(list(times.words)), "word_gap": None, "words_ref": False,
-                    "null": None, "tone": None, "tone_band": None, "sound_ref": False}
+                    "null": None, "tone": None, "tone_band": None, "sound_ref": False, "line": None}
             if mic:
                 time.sleep(0.4)                 # The end of the sentence reaching the microphone
-                x = mic.between(started, finished + 0.4)
-                mic.save(x, os.path.join(out_dir, f"live_{number:02d}_{name}.wav"))
-                take["mic"] = heard_by_mic(x, mic.rate)
+                mic.save(mic.between(take_start, finished + 0.4),       # The whole take, as heard
+                         os.path.join(out_dir, f"live_{number:02d}_{name}.wav"))
+                take["mic"] = heard_by_mic(mic.between(started, finished + 0.4), mic.rate)
+                if key == "B":                  # The line spoken before the sentence
+                    take["line"] = heard_by_mic(mic.between(line[0], min(line[1] + 0.3, started)), mic.rate)
             if ask:
                 take["heard"] = ask_heard(f"sentence in take {number}")
             takes.append(take)
@@ -1454,6 +1461,9 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
             report(f"  The recording stopped with an error: {mic.error}")
         if nothing:
             report(f"  No audio at all for {', '.join(nothing)}: the recording stopped.")
+        clipped = [t["name"] for t in takes if t["mic"] and t["mic"]["clipped"]]
+        if clipped:
+            report(f"  The recording clipped (reached full scale) in {', '.join(clipped)}: turn the input down.")
         if heard < len(takes):
             report("  Headphones, a low input level, or a speakerphone or headset that cancels its own sound would")
             report("  do this. If the voice plays through a speakerphone, play it through another output for this")
@@ -1461,6 +1471,15 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
             report("  then --mic N).")
     if not words_ok and not any(t["onsets"] for t in takes):
         report("The voice didn't report when each word started, so the word timings can't be compared.")
+    lines = [t["line"] for t in takes if t["line"] and t["line"]["pitch"] is not None]
+    sentences = [t["mic"] for t in takes if t["mic"] and t["mic"]["pitch"] is not None]
+    if lines and sentences:
+        report()
+        report("The two sentences, as recorded (medians):")
+        for label, group in ((f'the line before it in B takes, "{PRIMING_PHRASE}"', lines),
+                             ("the test sentence, all takes", sentences)):
+            report(f"  {label + ':':62} pitch {statistics.median(g['pitch'] for g in group):3.0f} Hz, "
+                   f"range {statistics.median(g['range'] for g in group):4.1f} st")
     report()
     if len([t for t in takes if t["key"] == "A"]) < 2:
         report("Too few takes after silence to judge: run at least two rounds (--rounds).")
