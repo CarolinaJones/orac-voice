@@ -22,8 +22,11 @@ A performance, reliability and tidy-up release. You don't need to change any set
 - **"LOADING LANGUAGE MODEL" status.** Shown on screen and on the LCD ("LOADING MODEL...") until the
   boot preload has finished. A question asked before then waits for it, which is where a slow first
   reply comes from after switching models (about 15 s with `gemma4:12b`, 30 s with the MLX model).
-- **Model timings in `ollama_debug.log`.** For the preload and for every reply: time to first token,
-  model load time, prompt tokens evaluated (few means the prompt cache was used) and generation.
+- **Model timings in `ollama_debug.log`.** For the preload and for every reply: time to first token
+  (and how much of it was spent waiting for the model), load time, prompt reading time and
+  generation. Replies that are stopped early are logged too.
+- **Whisper warm-up at start-up.** Whisper loaded its model on the first thing said (3.7 s instead of
+  under a second); one second of silence is now transcribed while ORAC boots.
 - **Gemma 3 stop strings removed.** Gemma 4 uses different turn markers. A stop list sent with the
   request also replaced the model's own.
 

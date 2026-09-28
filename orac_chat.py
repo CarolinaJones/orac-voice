@@ -2638,12 +2638,12 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 # request-level stop list replaces the model's own stop parameters
             }
         )
-        timings = None
+        final = None
         for chunk in interruptible(stream, epoch_id):
             if state.is_interrupted.is_set() or (epoch_id is not None and state.stream_epoch != epoch_id):
                 break
             if chunk.get('done'):
-                timings = model_timings(chunk)
+                final = chunk
             
             if first_chunk:
                 t_llm_first_token = time.time()
@@ -2701,8 +2701,19 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 else:
                     break          
     
-        if timings:
-            log_error(f"Reply: first token after {state.last_ttft_time}; {timings}")
+        if first_chunk:
+            log_error(f"Reply: stopped before the first token ({time.time() - t_llm_start:.1f}s)")
+        else:
+            ttft = t_llm_first_token - t_llm_start
+            line = f"Reply: first token after {ttft:.2f}s"
+            if final is not None:
+                busy = ((final.get('load_duration') or 0) + (final.get('prompt_eval_duration') or 0)) / 1e9
+                if ttft - busy > 1.0:
+                    line += f" (about {ttft - busy:.1f}s of it waiting for the model)"
+                line += f"; {model_timings(final)}"
+            else:
+                line += "; no final stats from the model (the reply was stopped early)"
+            log_error(line)
         if epoch_id is not None and state.stream_epoch not in (epoch_id, 0.0):
             return      # Superseded by a newer request, which now owns the teletype, TTS queue and history
 
@@ -2987,6 +2998,36 @@ def _keyboard_listener_impl(tts, teletype):
                             render_input_box()
     except Exception as e: log_error(f"keyboard_listener: {type(e).__name__}: {e}")
 
+# S P E E C H  T O  T E X T #
+
+_whisper_lock = threading.Lock()
+
+def transcribe(audio):
+    """ Whisper speech-to-text. The lock keeps the start-up warm-up and a real transcription apart. """
+    with _whisper_lock:
+        return mlx_whisper.transcribe(
+            audio,
+            path_or_hf_repo=WHISPER_MODEL,
+            fp16=True,
+            language='en',
+            condition_on_previous_text=False,
+            temperature=0.0,
+            best_of=1,
+            compression_ratio_threshold=2.4,
+            logprob_threshold=-1.0,
+            no_speech_threshold=0.6,
+        )
+
+def warm_up_whisper():
+    """ Whisper loads its model on first use (3.7 s for the first thing said, under a second after), so
+        one second of silence is transcribed while ORAC boots. """
+    started = time.time()
+    try:
+        transcribe(np.zeros(16000, dtype=np.float32))
+        log_error(f"Whisper warm-up: {time.time() - started:.1f}s")
+    except Exception as e:
+        log_error(f"Whisper warm-up: {type(e).__name__}: {e}")
+
 # R U N  L O O P #
 
 def run_local_bot():
@@ -2997,6 +3038,7 @@ def run_local_bot():
     recognizer.phrase_threshold = 0.5 
 
     threading.Thread(target=preload_model, daemon=True).start()
+    if not TEXT_ONLY_MODE: threading.Thread(target=warm_up_whisper, daemon=True).start()
 
     tts = MacTTS()
     teletype = TeletypeUI()
@@ -3149,18 +3191,7 @@ def run_local_bot():
                         audio_raw = audio.get_raw_data()
                         audio_float32 = np.frombuffer(audio_raw, dtype=np.int16).astype(np.float32) / 32768.0
                         
-                        result = mlx_whisper.transcribe(
-                            audio_float32,
-                            path_or_hf_repo=WHISPER_MODEL,
-                            fp16=True,
-                            language='en',
-                            condition_on_previous_text=False,
-                            temperature=0.0,
-                            best_of=1,
-                            compression_ratio_threshold=2.4,
-                            logprob_threshold=-1.0,
-                            no_speech_threshold=0.6,
-                        )
+                        result = transcribe(audio_float32)
                         
                         user_text = result['text'].strip()
 
