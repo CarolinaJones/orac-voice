@@ -16,9 +16,12 @@ Tools for tracking down the flat first sentence, and a few tweaks.
   its pitch, pitch range and speaking rate. It then compares the first sentence of each reply with the
   rest, to show whether a flat opening is in its words. `--say` replays the replies.
 - **`tts_probe.py --live-check`** speaks the same sentence live after silence, straight after another
-  sentence, and straight after a silent warm-up line. It records each take through the microphone, to
-  show whether the live voice carries anything over from one sentence to the next. Every earlier check
-  compared renders, which can't show that.
+  sentence, and straight after a silent warm-up line, to show whether the live voice carries anything
+  over from one sentence to the next. Every earlier check compared renders, which can't show that. It
+  compares when each word started (the voice's own timings) and records each take through the
+  microphone for pitch; `--list-mics` and `--mic N` pick another input if the default can't hear the
+  voice. It only claims what it could measure.
+- **`--from-log`** compares first sentences with the rest only within replies of two sentences or more.
 
 ### Tweaks
 - While the model loads, the status line reads "ACCESSING TARIAL MATRIX..." (LCD: "ACCESSING...").

@@ -42,7 +42,7 @@ This project is specifically designed to run on a dedicated **Mac Mini M4 (16GB 
 * `orac_personality.py`: Strict system prompts governing ORAC's arrogant tone, refusal to use filler words, and sardonic sign-offs.
 * `orac_phonetics.py`: Regex dictionary that manipulates text strings before they hit the TTS engine to ensure proper sci-fi nomenclature and British intonations *(e.g., Trap-Bath split: *asking* -> *arsking*).*
 * `orac_trigger_phrases.py`: The phrases that steer ORAC's replies: "Very Well" requests, menial tasks, memory recall, filler words and his topics of interest.
-* `extras/tts_probe.py`: A voice diagnostic. It times the speech synthesizer *(cold and warm, spoken live and rendered, with or without the model running)*, checks which settings the voice obeys, measures and replays what ORAC said *(from `ollama_debug.log`)*, and tests whether the live voice carries anything over from one sentence to the next *(through the microphone)*. It saves the results to a text file. *(Instructions at the top of the file.)*
+* `extras/tts_probe.py`: A voice diagnostic. It times the speech synthesizer *(cold and warm, spoken live and rendered, with or without the model running)*, checks which settings the voice obeys, measures and replays what ORAC said *(from `ollama_debug.log`)*, and tests whether the live voice carries anything over from one sentence to the next *(from the voice's own word timings, and through the microphone)*. It saves the results to a text file. *(Instructions at the top of the file.)*
 * `ORAC-VOICE_User_Manual.md`: Every voice command, keyboard shortcut and mode, in one place.
 * `CHANGELOG.md`: What changed in each version.
 
