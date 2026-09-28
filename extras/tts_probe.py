@@ -8,6 +8,9 @@ a cold voice, contention with the LLM and real-time starvation apart. Quit ORAC 
     python3 extras/tts_probe.py --llm gemma4:12b-mlx      # while the MLX model streams a reply
     python3 extras/tts_probe.py --llm gemma4:12b          # same with the GGUF model, to compare
 
+By default the sentence is wrapped in the same SSML as ORAC (rate 114%, pitch x-high, volume loud,
+strong emphasis; change with --ssml-*, or --plain for none) and the model gets ORAC's context size.
+
 Each round idles (default 90 s, so the voice goes cold), optionally starts an Ollama reply and waits
 for its first token (ORAC's situation when it speaks sentence one), then runs two tests:
 
@@ -111,9 +114,17 @@ def pick_voice(name):
     return None                     # the system default voice
 
 
+def orac_ssml(text, rate, pitch, volume, emphasis):
+    """The SSML wrapper ORAC's MacTTS builds around each utterance."""
+    escaped = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                   .replace('"', "&quot;").replace("'", "&apos;"))
+    inner = f'<emphasis level="{emphasis}">{escaped}</emphasis>' if emphasis else escaped
+    return f'<speak><prosody rate="{rate}%" pitch="{pitch}" volume="{volume}"><s>{inner}</s></prosody></speak>'
+
+
 def make_utterance(text, voice, rate):
     if text.lstrip().startswith("<speak"):
-        utterance = AVSpeechUtterance.alloc().initWithSSMLRepresentation_(text)
+        utterance = AVSpeechUtterance.speechUtteranceWithSSMLRepresentation_(text)
         if utterance is None:
             sys.exit("AVSpeechUtterance rejected the SSML.")
     else:
@@ -195,8 +206,9 @@ def render(synth, utterance, path, timeout=60.0):
 class LLMLoad:
     """Streams a long reply from Ollama in the background, as ORAC does while it speaks."""
 
-    def __init__(self, model, host, system_prompt):
+    def __init__(self, model, host, system_prompt, num_ctx, num_batch):
         self.model, self.host, self.system_prompt = model, host.rstrip("/"), system_prompt
+        self.num_ctx, self.num_batch = num_ctx, num_batch
         self.tokens, self.ttft = 0, None
         self.first_token, self.stop = threading.Event(), threading.Event()
         self.error = None
@@ -217,7 +229,7 @@ class LLMLoad:
             messages.insert(0, {"role": "system", "content": self.system_prompt})
         body = {"model": self.model, "messages": messages, "stream": True, "think": False, "keep_alive": 14400,
                 # Same runner options as ORAC, so a model ORAC loaded isn't reloaded for the probe
-                "options": {"num_ctx": 10240, "num_batch": 256, "num_predict": 800}}
+                "options": {"num_ctx": self.num_ctx, "num_batch": self.num_batch, "num_predict": 800}}
         try:
             with requests.post(f"{self.host}/api/chat", json=body, stream=True, timeout=300) as response:
                 response.raise_for_status()
@@ -245,7 +257,7 @@ def orac_system_prompt():
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from orac_personality import orac_personality
         from orac_data_core import data_core
-        return f"{orac_personality.format(ORAC_NAME='ORAC')}\n\n--- DATABANKS ---\n{data_core}"
+        return f"{orac_personality.replace('{ORAC_NAME}', 'ORAC')}\n\n--- DATABANKS ---\n{data_core}"
     except Exception:
         return None
 
@@ -259,7 +271,14 @@ def main():
     ap.add_argument("--text", default=DEFAULT_TEXT, help="sentence to speak, or SSML starting with <speak>")
     ap.add_argument("--ssml-file", help="read the text/SSML from this file")
     ap.add_argument("--voice", help="part of a voice name (default: your Personal Voice, else the system voice)")
-    ap.add_argument("--rate", type=float, help="AVSpeechUtterance rate, 0.0-1.0 (default: the voice's own)")
+    ap.add_argument("--rate", type=float, help="AVSpeechUtterance rate 0.0-1.0; only used with --plain")
+    ap.add_argument("--plain", action="store_true", help="speak the text as-is, without ORAC's SSML wrapper")
+    ap.add_argument("--ssml-rate", default="114", help="ORAC SSML prosody rate, percent (default 114)")
+    ap.add_argument("--ssml-pitch", default="x-high", help="ORAC SSML prosody pitch (default x-high)")
+    ap.add_argument("--ssml-volume", default="loud", help="ORAC SSML prosody volume (default loud)")
+    ap.add_argument("--ssml-emphasis", default="strong", help='ORAC SSML emphasis level, "" to omit (default strong)')
+    ap.add_argument("--num-ctx", type=int, default=16384, help="must match ORAC's MODEL_MAX_TOKENS (default 16384)")
+    ap.add_argument("--num-batch", type=int, default=256, help="must match ORAC's OLLAMA_NUM_BATCH (default 256)")
     ap.add_argument("--llm", metavar="MODEL", help="stream a reply from this Ollama model during each round")
     ap.add_argument("--host", default="http://localhost:11434", help="Ollama URL")
     ap.add_argument("--idle", type=float, default=90, help="seconds of silence before each round (default 90)")
@@ -275,6 +294,9 @@ def main():
         return
 
     text = open(args.ssml_file, encoding="utf-8").read() if args.ssml_file else args.text
+    if not args.plain and not text.lstrip().startswith("<speak"):
+        text = orac_ssml(text, args.ssml_rate, args.ssml_pitch, args.ssml_volume, args.ssml_emphasis)
+        args.rate = None                # SSML carries the rate
     try:
         status = int(AVSpeechSynthesizer.personalVoiceAuthorizationStatus())
         print(f"Personal Voice authorisation: {AUTH_STATUS.get(status, status)}")
@@ -304,7 +326,7 @@ def main():
 
             load, ttft = None, None
             if args.llm:
-                load = LLMLoad(args.llm, args.host, system_prompt)
+                load = LLMLoad(args.llm, args.host, system_prompt, args.num_ctx, args.num_batch)
                 try:
                     ttft = load.start()
                 except RuntimeError as e:

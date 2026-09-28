@@ -86,7 +86,10 @@ VOICE = "ORAC Personal Voice" 						# Apple Personal Voice Name or Synth Voice N
 SSML_RATE = 114            							# percent
 SSML_PITCH = "x-high"      							# x-low, low, medium, high, x-high, or "+10%"
 SSML_VOLUME = "loud"       							# silent, x-soft, soft, medium, loud, x-loud
-SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none
+SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to omit the tag (emphasis on a whole sentence can flatten its intonation)
+
+MIN_FIRST_UTTERANCE_WORDS = 4						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
+SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
 
 voice_pitch = 72 									# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 188										# Only works on SYNTH Speech Rate
@@ -418,6 +421,15 @@ class OracState:
                 )                
 
 state = OracState()
+
+# Opt out of App Nap and timer coalescing while ORAC idles between turns (the "aggressive power
+# management" feel); idle system sleep is still allowed. The token must live as long as the process.
+try:
+    from Foundation import NSProcessInfo, NSActivityUserInitiatedAllowingIdleSystemSleep, NSActivityLatencyCritical
+    _process_activity = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
+        NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical, "ORAC real-time voice")
+except Exception:
+    _process_activity = None
 
 try:
     old_term_settings = termios.tcgetattr(sys.stdin.fileno())
@@ -1084,10 +1096,11 @@ class MacTTS:
         )
 
         """ Check variables at the top of the code """
+        inner = f'<emphasis level="{SSML_EMPHASIS}">{escaped_text}</emphasis>' if SSML_EMPHASIS else escaped_text
         ssml_string = (
             f'<speak>'
             f'<prosody rate="{SSML_RATE}%" pitch="{SSML_PITCH}" volume="{SSML_VOLUME}">'
-            f'<s><emphasis level="{SSML_EMPHASIS}">{escaped_text}</emphasis></s>'
+            f'<s>{inner}</s>'
             f'</prosody>'
             f'</speak>'
         )
@@ -2574,6 +2587,13 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     t_llm_start = time.time()
     
     sent_first_sentence = False
+    held_speech = []        # Only used when SPEAK_AFTER_GENERATION is on
+
+    def speak(text):
+        clean_speech = sanitize_for_tts(text)
+        if not re.search(r'[a-zA-Z0-9]', clean_speech): return
+        if SPEAK_AFTER_GENERATION: held_speech.append(clean_speech)
+        else: tts.say(clean_speech)
 
     try:
         stream = ollama_client.chat(
@@ -2657,17 +2677,21 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             while True:
                 matches = list(SPLIT_REGEX.finditer(sentence_buffer))
                 
-                # Send immediately if it's the first sentence (for low latency).
-                # Otherwise, wait until there are at least 2 sentences in the buffer for emotional context.
-                if matches and (not sent_first_sentence or len(matches) >= 2):
+                # Send the first sentence immediately (for low latency), unless it is a very short opener, which
+                # waits for the next one. After that, wait for at least 2 sentences for emotional context.
+                if not matches:
+                    ready = False
+                elif not sent_first_sentence:
+                    ready = len(matches) >= 2 or len(sentence_buffer[:matches[-1].end()].split()) >= MIN_FIRST_UTTERANCE_WORDS
+                else:
+                    ready = len(matches) >= 2
+                if ready:
                     # Grab everything up to the end of the last matched sentence.
                     split_point = matches[-1].end()
                     text_to_say = sentence_buffer[:split_point].strip()
                     
                     if len(text_to_say) > 2:
-                        clean_speech = sanitize_for_tts(text_to_say)
-                        if re.search(r'[a-zA-Z0-9]', clean_speech): 
-                            tts.say(clean_speech)
+                        speak(text_to_say)
                             
                     sentence_buffer = sentence_buffer[split_point:]
                     sent_first_sentence = True
@@ -2698,8 +2722,9 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                     teletype.is_typing.set()
 
             if sentence_buffer.strip():
-                 clean_speech = sanitize_for_tts(sentence_buffer.strip())
-                 if re.search(r'[a-zA-Z0-9]', clean_speech): tts.say(clean_speech)
+                speak(sentence_buffer.strip())
+            for held in held_speech:
+                tts.say(held)
 
             clean_history_text = "".join(response_chunks).strip()
             with state.hist_lock:
