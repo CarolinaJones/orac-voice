@@ -129,6 +129,7 @@ OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Testing against 'flattening' is
 OLLAMA_TIMEOUT = 120								# Seconds of silence from Ollama before a request is abandoned
 OLLAMA_NUM_BATCH = 256								# One value for every chat() call, so Ollama never sees differing runner options
 OLLAMA_KEEP_ALIVE = 14400							# Seconds the model stays loaded between requests (4h)
+UNLOAD_ON_EXIT = False								# True frees the model's memory when ORAC closes; False keeps it loaded, so a restart is ready in seconds
 
 ollama_client = Client(timeout=OLLAMA_TIMEOUT)
 
@@ -494,10 +495,11 @@ def cleanup_processes():
             processing_sound.stop()
     except Exception: pass
 
-    try:
-            requests.post("http://localhost:11434/api/generate", 
+    if UNLOAD_ON_EXIT:      # Otherwise the model stays loaded for OLLAMA_KEEP_ALIVE, and a restart skips the load and prompt read
+        try:
+            requests.post("http://localhost:11434/api/generate",
                           json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=1.0)
-    except: pass
+        except Exception: pass
 
 atexit.register(cleanup_processes)
 

@@ -19,6 +19,9 @@ A performance, reliability and tidy-up release. You don't need to change any set
   `num_batch`, `num_keep`), `keep_alive` and `think=False` as normal replies. Different options
   made Ollama reload the model, and leaving out `keep_alive` reset it to Ollama's 5-minute default.
 - **New `OLLAMA_KEEP_ALIVE` setting** (default 4 hours).
+- **New `UNLOAD_ON_EXIT` setting** (default off). ORAC used to unload the model whenever it closed, so
+  every restart paid the model load and the full prompt read again (about 30 s). The model now stays
+  loaded for `OLLAMA_KEEP_ALIVE` after ORAC closes; set it to `True` to free the memory instead.
 - **"LOADING LANGUAGE MODEL" status.** Shown on screen and on the LCD ("LOADING MODEL...") until the
   boot preload has finished. A question asked before then waits for it, which is where a slow first
   reply comes from after switching models (about 15 s with `gemma4:12b`, 30 s with the MLX model).
