@@ -353,7 +353,8 @@ class OracState:
         self.activator_lock = threading.Lock()
         self.activator_gen = 0
         self.tts_engine = None
-        self.stream_epoch = 0.0
+        self.stream_epoch = 0.0                 # Epoch of the reply in flight; 0.0 = cancelled with no successor
+        self.flash_seq = 0
         self.current_tokens = 0
         self.token_status = "NOMINAL"
         self.token_color = G
@@ -369,8 +370,7 @@ class OracState:
         self.scroll_offset = 0
         self.hist_lock = threading.RLock()
         self.input_buffer = ""
-        self.input_ready = threading.Event()
-        self.submitted_text = ""
+        self.input_queue = queue.Queue()        # Lines typed by the user, consumed by the main loop
         self.terminal_lock = threading.Lock()
         self.ui_redraw_event = threading.Event()
         self.text_selection_mode = False
@@ -622,8 +622,12 @@ def debug_line(msg, row_offset=3):
         sys.stdout.flush()
 
 def flash_status(text, color=A, duration=3.0):
+    state.flash_seq += 1
+    seq = state.flash_seq
+
     def restore():
-        if state.running and not state.is_shutdown.is_set():
+        # Only the newest flash restores the line, so overlapping flashes don't cut each other short
+        if seq == state.flash_seq and state.running and not state.is_shutdown.is_set():
             mic_m = getattr(state, 'mic_muted', False)
             text_m = getattr(state, 'text_selection_mode', False)
             
@@ -995,9 +999,20 @@ class SoundLooper:
         self.sound_path = sound_path
         self.ns_sound = None
         self.lock = threading.Lock()
+        self._generation = 0        # Bumped by stop(), so a start(delay=...) queued before it is cancelled
 
-    def start(self):
+    def start(self, delay=0.0):
+        if delay > 0:
+            with self.lock:
+                generation = self._generation
+            threading.Timer(delay, self._start, args=(generation,)).start()
+        else:
+            self._start(None)
+
+    def _start(self, generation):
         with self.lock:
+            if generation is not None and generation != self._generation:
+                return
             if not self.ns_sound and os.path.exists(self.sound_path):
                 with objc.autorelease_pool():
                     self.ns_sound = NSSound.alloc().initWithContentsOfFile_byReference_(self.sound_path, True)
@@ -1009,6 +1024,7 @@ class SoundLooper:
 
     def stop(self):
         with self.lock:
+            self._generation += 1
             if self.ns_sound:
                 self.ns_sound.stop()
                 self.ns_sound = None
@@ -1525,6 +1541,14 @@ signal.signal(signal.SIGHUP, _handle_terminate)
 def alarm_worker(trigger_epoch, tts):
     while state.running and getattr(state, 'alarm_trigger_epoch', None) == trigger_epoch:
         if time.time() >= trigger_epoch:
+            # Let a reply in progress finish (and wait out a removed key) rather than talking over it
+            while state.running and state.alarm_trigger_epoch == trigger_epoch and (
+                    state.is_processing.is_set() or state.is_speaking.is_set() or not tts.is_idle()
+                    or (USE_ACTIVATOR and not state.key_inserted)):
+                time.sleep(0.25)
+            if state.alarm_trigger_epoch != trigger_epoch:
+                break
+
             state.is_interrupted.clear()
             state.is_alarm_playing = True
             if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
@@ -1533,7 +1557,7 @@ def alarm_worker(trigger_epoch, tts):
             play_orac_fx("s_bracelet")
             time.sleep(0.7)          
             play_orac_fx("s_startup")
-            threading.Timer(0.3, processing_sound.start).start()
+            processing_sound.start(delay=0.3)
             alarm_owns_busy = not state.is_processing.is_set()
             state.is_processing.set()
             time.sleep(0.7)
@@ -1751,7 +1775,7 @@ def handle_activator_change(is_in):
         # KEY REMOVED (Lock)
         if not TEXT_ONLY_MODE: state.mic_muted = True
         state.is_interrupted.set()
-        state.stream_epoch = time.time() 
+        state.stream_epoch = 0.0    # Cancels the reply in flight; with no successor it cleans up after itself
         state.is_processing.clear()
         
         # Safely silence audio in the main hardware thread
@@ -2002,7 +2026,7 @@ def hardware_power_off(tts, delay_minutes=0):
     set_status(f"{FL}●{NOFL} INITIATING TOTAL SYSTEM POWER DOWN...", R)
 
     play_orac_fx("s_startup")
-    threading.Timer(0.3, processing_sound.start).start()
+    processing_sound.start(delay=0.3)
     state.is_processing.set()
     time.sleep(0.7)
     
@@ -2041,7 +2065,7 @@ def hardware_system_reboot(tts):
     set_status(f"{FL}●{NOFL} INITIATING SYSTEM REBOOT...", R)
 
     play_orac_fx("s_startup")
-    threading.Timer(0.3, processing_sound.start).start()
+    processing_sound.start(delay=0.3)
     state.is_processing.set()
     time.sleep(0.7)
     
@@ -2451,6 +2475,11 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     final_prompt = translated_prompt + override_text + archive_injection + adaptive_constraint
 
     with state.hist_lock:
+        if epoch_id is not None and state.stream_epoch != epoch_id:
+            return      # Superseded or cancelled before it started
+        if state.history and state.history[-1]['role'] == 'user':
+            # A superseded request never recorded its reply: keep user/assistant turns alternating
+            state.history.append({'role': 'assistant', 'content': "[transmission interrupted]"})
         if len(state.history) == 0:
             final_prompt = FIRST_TURN_TAG + final_prompt
         state.history.append({'role': 'user', 'content': final_prompt})
@@ -2475,14 +2504,14 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
         set_status("● OPTIMIZING MEMORY CORRIDORS...", A)
     
         play_orac_fx("s_startup")
-        threading.Timer(0.3, processing_sound.start).start()
+        processing_sound.start(delay=0.3)
         time.sleep(0.7)
         tts.say(random.choice(PRUNE_STALL_LINES))
     
         summary = generate_compaction_summary(pruned_msgs)
         
         with state.hist_lock:
-            if state.history_gen == prune_gen:
+            if state.history_gen == prune_gen and (epoch_id is None or state.stream_epoch == epoch_id):
                 state.history = remaining_hist
             else:
                 remaining_hist = None
@@ -2509,6 +2538,8 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     update_header_only()
     
     with state.hist_lock:
+        if epoch_id is not None and state.stream_epoch != epoch_id:
+            return      # Superseded while pruning; the newer request carries on from here
         temp_history = list(state.history)
 
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
@@ -2634,6 +2665,9 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 else:
                     break          
     
+        if epoch_id is not None and state.stream_epoch not in (epoch_id, 0.0):
+            return      # Superseded by a newer request, which now owns the teletype, TTS queue and history
+
         tail = tag_filter.flush()
         if tail and not state.is_interrupted.is_set():
             response_chunks.append(tail)
@@ -2832,14 +2866,12 @@ def _keyboard_listener_impl(tts, teletype):
                         if not state.is_shutdown.is_set(): render_input_box()
                         trigger_barge_in(tts, teletype)
                     elif char == '\x03':
-                        state.submitted_text = SHUTDOWN_CMD[0]
-                        state.input_ready.set()
+                        state.input_queue.put(SHUTDOWN_CMD[0])
                         state.input_buffer = ""
                         if not state.is_shutdown.is_set(): render_input_box()
                     elif char in ('\r', '\n'):
                         if state.input_buffer.strip():
-                            state.submitted_text = state.input_buffer.strip()
-                            state.input_ready.set()
+                            state.input_queue.put(state.input_buffer.strip())
                         state.input_buffer = ""
                         if not state.is_shutdown.is_set(): render_input_box()
                     elif char in ('\x7f', '\b'):
@@ -2964,7 +2996,7 @@ def run_local_bot():
                         
                     bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.is_idle()
 
-                    if state.input_ready.is_set():
+                    if not state.input_queue.empty():
                         if bot_busy:
                             trigger_barge_in(tts, teletype)
                             start_wait = time.time()
@@ -2974,8 +3006,7 @@ def run_local_bot():
                                     break
                                 time.sleep(0.05)
 
-                        user_text = state.submitted_text
-                        state.input_ready.clear()
+                        user_text = state.input_queue.get()
                         
                         if process_system_command(user_text, tts, teletype):
                             continue
