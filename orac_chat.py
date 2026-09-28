@@ -195,21 +195,36 @@ SPLIT_REGEX = re.compile(r'(?<!\bMr)(?<!\bDr)(?<!\bMrs)(?<!\bMs)(?<!\bCapt)(?<!\
 ansi_escape = re.compile(r'\x1b(?:\[[0-9;]*[A-Za-z~]|O[A-Za-z])')
 HALLUCINATION_REGEX = re.compile(r'(?i)(thank you|thanks for watching|subscribe|amara\.org|by mooji|subtitles by|\[silence\]|\[music\]|\(sigh\)|^[ \t]*(oh|you|ah|um|uh)\.?[ \t]*$)')
 
-PURGE_CMD = ("clear history", "new subject")
+PURGE_CMD = ("clear history", "clear memory", "new subject")
 SHUTDOWN_CMD = ("exit interface",)
-HARDWARE_SHUTDOWN_CMD = ["activate system shutdown"]
-HARDWARE_REBOOT_CMD = ["activate system reboot"]
-ENABLE_NETWORKING_CMD = ["enable networking"]
-DISABLE_NETWORKING_CMD = ["disable networking"]
+HARDWARE_SHUTDOWN_CMD = ("activate system shutdown", "activate system shut down")
+HARDWARE_REBOOT_CMD = ("activate system reboot",)
+ENABLE_NETWORKING_CMD = ("enable networking",)
+DISABLE_NETWORKING_CMD = ("disable networking",)
 
 SHORT_QUERY_OK = {"why", "how", "who", "zen", "gan", "ai"}
-PURGE_RE = re.compile(r'\b(?:' + '|'.join(re.escape(c) for c in PURGE_CMD) + r')\b')
-_CMD_FILLER_WORDS = {"orac", "please", "now", "system", "the", "yourself", "immediately"}
+_CMD_FILLER_WORDS = {"orac", ORAC_NAME.lower(), "please", "now", "system", "the", "yourself", "immediately"}
+
+def _command_core(text):
+    words = re.sub(r"[^\w\s]", " ", text.lower()).split()
+    return " ".join(w for w in words if w not in _CMD_FILLER_WORDS)
+
+def is_command(text, commands):
+    """ True when the whole utterance is one of `commands`, give or take filler ("ORAC", "please", "now"...).
+        Substring matching fired on sentences that merely mention a command, e.g. "what if I said
+        activate system shutdown?" powered the Mac off. """
+    core = _command_core(text)
+    return any(core == _command_core(c) for c in commands)
 
 def is_shutdown_command(text):
-    words = re.sub(r"[^\w\s]", " ", text.lower()).split()
-    core = " ".join(w for w in words if w not in _CMD_FILLER_WORDS)
-    return core in SHUTDOWN_CMD
+    return is_command(text, SHUTDOWN_CMD)
+
+# Past-session phrases ("last time", "archive", "past record") also occur in lore questions ("the last
+# time Travis saw Blake", "Avon's past record"), so on their own they only mean "search the archive"
+# when the user is talking about their own conversation, or explicitly asks to check the archive.
+CONVERSATION_REF_RE = re.compile(r"\b(?:i|me|my|we|us|our)\b")
+ARCHIVE_REQUEST_RE = re.compile(r"\b(?:check|access|search|open|consult|load|retrieve|review)\b.{0,15}\barchives?\b")
+LAST_WEEKDAY_RE = re.compile(r"\b(?:last|previous)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
 
 def log_error(msg):
     try:
@@ -233,7 +248,7 @@ def phrase_hit(text, phrases):
 TTS_NUM_SPACER = re.compile(r'(?<![a-zA-Z])(\d{3,})(?![a-zA-Z])')
 TTS_ELLIPSIS = re.compile(r'\.{2,}')
 TTS_ARROGANT_ADVERBS = re.compile(r'(?i)\b(however|therefore|predictably|obviously|furthermore|evidently|naturally|clearly|as expected)[.,]*\s*')
-TTS_DELIBERATE_PRONOUNS = re.compile(r'(?<![.,;!?])\b(i|my)\b(?![.,;])', flags=re.IGNORECASE)
+TTS_DELIBERATE_PRONOUNS = re.compile(r"(?<![.,;!?])\b(i|my)\b(?![.,;'’])", flags=re.IGNORECASE)   # Not in "I'm"/"I'd" (was "I, m")
 TTS_POSSESSIVE_S = re.compile(r"\b([A-Z][a-z]+s)'(?!\w)")
 TTS_MARKDOWN = re.compile(r'[*`_~#>|+]')
 TTS_BRACKETS = re.compile(r'[\[\]{}()]')
@@ -1675,29 +1690,27 @@ def generate_compaction_summary(pruned_msgs):
 
 def process_system_command(user_text, tts, teletype):
     """ Checks if the user issued a core hardware/system command. Returns True if handled. """
-    clean_text = user_text.lower()
-    
-    if any(cmd in clean_text for cmd in ENABLE_NETWORKING_CMD):
+    if is_command(user_text, ENABLE_NETWORKING_CMD):
         threading.Thread(target=process_networking_status, args=(tts, "On"), daemon=True).start()
         return True
         
-    if any(cmd in clean_text for cmd in DISABLE_NETWORKING_CMD):
+    if is_command(user_text, DISABLE_NETWORKING_CMD):
         threading.Thread(target=process_networking_status, args=(tts, "Off"), daemon=True).start()
         return True
         
-    if any(cmd in clean_text for cmd in HARDWARE_REBOOT_CMD):
+    if is_command(user_text, HARDWARE_REBOOT_CMD):
         hardware_system_reboot(tts)
         return True
         
-    if any(cmd in clean_text for cmd in HARDWARE_SHUTDOWN_CMD):
+    if is_command(user_text, HARDWARE_SHUTDOWN_CMD):
         hardware_power_off(tts, delay_minutes=0)
         return True
         
     if is_shutdown_command(user_text):   # [F1]
-        if shutdown_sequence(tts): 
-        	return True
+        shutdown_sequence(tts)      # Exits, or returns after "C": either way it's handled (a cancel used to fall through to ORAC as a question)
+        return True
         
-    if PURGE_RE.search(re.sub(r"[^\w\s]", " ", clean_text)):
+    if is_command(user_text, PURGE_CMD):
         save_archival_memory()
         with state.hist_lock:
             state.history.clear()
@@ -2253,14 +2266,9 @@ def startup_animation():
 #==================================================================================================#
 
 def search_archival_memory(user_text):
-    query_triggers = trigger_phrases["EXPLICIT_PAST"]
+    # The caller decides whether this is an archive request. (A trigger check here also stopped
+    # "what did we talk about?" early in a session from falling back to the latest archive.)
     clean_text = user_text.lower()
-    day_names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-    has_weekday_ref = any(f"last {d}" in clean_text or f"previous {d}" in clean_text for d in day_names)
-    
-    if not (phrase_hit(clean_text, query_triggers) or has_weekday_ref):
-        return ""
-
     now = datetime.now()
     target_date = None
 
@@ -2437,7 +2445,8 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     is_menial_task = phrase_hit(clean_prompt, trigger_phrases["MENIAL_TASK_PHRASES"])
     is_asking_time = re.search(r'\b(?:time|clock|hour|temporal|date)s?\b', clean_prompt) is not None
     is_memory_request = phrase_hit(clean_prompt, trigger_phrases["PAST_MEMORY"])
-    is_explicit_past = phrase_hit(clean_prompt, trigger_phrases["EXPLICIT_PAST"])
+    is_explicit_past = (phrase_hit(clean_prompt, trigger_phrases["EXPLICIT_PAST"]) or LAST_WEEKDAY_RE.search(clean_prompt) is not None) and (
+        is_memory_request or CONVERSATION_REF_RE.search(clean_prompt) is not None or ARCHIVE_REQUEST_RE.search(clean_prompt) is not None)
     is_topic_of_interest = WAFFLE_MODE and phrase_hit(clean_prompt, trigger_phrases["TOPIC_OF_INTEREST_PHRASES"])
     
     with state.hist_lock:
