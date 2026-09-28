@@ -1374,7 +1374,7 @@ def shutdown_sequence(tts):
     time.sleep(0.2) 
     if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
 
-    cols, rows = state.term_cols, state.term_rows
+    rows = state.term_rows
     set_status(f"● CRITICAL OVERRIDE DETECTED: {FL}INPUT REQUIRED{NOFL}", R)
     play_orac_fx("s_quit")
     cancel_shutdown = False
@@ -1404,7 +1404,7 @@ def shutdown_sequence(tts):
                             filename = os.path.join(TRANSCRIPT_DIR or BASE_DIR, "transcripts", f"{TR}_{timestamp}.txt")
                             os.makedirs(os.path.dirname(filename), exist_ok=True)
                             with open(filename, "w", encoding="utf-8") as f:
-                                f.write(f"--- ORAC: SYSTEM TRANSCRIPT ---\n")
+                                f.write("--- ORAC: SYSTEM TRANSCRIPT ---\n")
                                 f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                                 for log_item in state.full_message_log:
                                     role = log_item[0]
@@ -1653,7 +1653,7 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     elif is_only_filler:
         override_text = f"\n\n[OVERRIDE: CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Mockingly/sardonically demand they revise their question, addressing them {USER_NAME}.]"
     elif is_menial_task:
-        override_text = f"\n\n[OVERRIDE: CRITICAL: User is requesting you perfom a menial task. Frustratingly state request is not your responsibility but that you will comply. Complete the request without question and confirm.]"       
+        override_text = "\n\n[OVERRIDE: CRITICAL: User is requesting you perform a menial task. Frustratingly state request is not your responsibility but that you will comply. Complete the request without question and confirm.]"       
     elif is_asking_time:
         current_time = datetime.now().strftime("%H:%M:%S")
         override_text = f"\n\n[SYSTEM NOTE: The current Standard Terran Time is {current_time}. State it ONLY if asked.]"
