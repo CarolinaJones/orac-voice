@@ -42,8 +42,10 @@ A performance, reliability and tidy-up release. You don't need to change any set
     `VOICE` at the top of the probe, `--voice "name"` or `--menu`.
   - After each round it asks how the speech sounded, and saves the settings and results table to
     a text file next to the script.
-  - `--ssml-check` renders the sentence once per setting (SSML rate, pitch, volume and emphasis,
-    and the utterance's rate and pitch multiplier) and reports which ones change the audio.
+  - `--voice-check` (or `--ssml-check`) renders the sentence once per setting (SSML rate, pitch,
+    volume and emphasis, and the utterance's rate and pitch multiplier) and reports which ones
+    change the audio. It also tests whether a phrase said first (the old warm-up line) changes how
+    the sentence is spoken.
 
 ### Commands and archive
 - **Whole-utterance commands.** Power-off, reboot, networking and "clear history" now only run
