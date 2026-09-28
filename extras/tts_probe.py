@@ -52,11 +52,13 @@ words. Add --say to hear the replies again, spoken as ORAC spoke them. --session
 start-ups (default 1).
 
 --live-check tests what renders can't show: whether the live voice carries anything from one sentence
-to the next. It speaks the sentence live after 20 s of silence (--idle), straight after another sentence
-spoken aloud, and straight after a silent warm-up line, 3 times each (--rounds). It compares the takes'
-length and, from the voice's own word timings, when each word started; it also records every take
-through the microphone ORAC listens with (another with --mic N, see --list-mics) to compare pitch, pitch
-range and rhythm. Stay quiet while it runs (about three minutes). The takes are saved as .wav files.
+to the next. Each take is 20 s of silence (--idle), then the sentence spoken live: on its own (A),
+straight after another sentence spoken aloud (B), or straight after a silent warm-up line (C). There are
+3 of each (--rounds), in shuffled order, and A and C sound the same until the sentence starts, so you can
+rate them blind. It compares the takes' length and, from the voice's own word timings, when each word
+started; it also records every take through the microphone ORAC listens with (another with --mic N, see
+--list-mics) to compare pitch, pitch range and rhythm. Stay quiet while it runs (about five minutes). The
+takes are saved as .wav files.
 
 The settings, round notes and table are also saved to a text file next to this script, named
 tts_probe_<date>_<time>_<model>.txt (--log FILE to save it somewhere else).
@@ -67,6 +69,7 @@ import importlib.util
 import math
 import os
 import platform
+import random
 import re
 import statistics
 import subprocess
@@ -1315,20 +1318,26 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
     sentence = build_ssml(text, prosody, emphasis)
     before_ssml = {"B": build_ssml(PRIMING_PHRASE, prosody, emphasis),
                    "C": build_ssml(PRIMING_PHRASE, {**prosody, "volume": "silent"})}
-    order = [(r, key, before) for r in range(1, repeats + 1) for key, before in LIVE_CONDITIONS]
-    print("Stay quiet while it runs: the microphone is recording. First a silent warm-up, as ORAC does at start-up.",
-          flush=True)
+    order = []
+    for r in range(1, repeats + 1):             # Shuffled in each round, so the order gives nothing away
+        conditions = list(LIVE_CONDITIONS)
+        random.shuffle(conditions)
+        order += [(r, key, before) for key, before in conditions]
+    print(f"Stay quiet while it runs: the microphone is recording. Each take is {quiet:.0f} s of silence, then the")
+    print("sentence. Which kind of take it is isn't shown until the end, and A and C sound the same until the")
+    print("sentence starts, so you can rate them blind. First a silent warm-up, as ORAC does at start-up.", flush=True)
     with objc.autorelease_pool():
-        speak_live(synth, times, make_utterance(build_ssml("Logic arrays online.", {"volume": "silent"}), voice, None))
+        speak_live(synth, times, make_utterance(before_ssml["C"], voice, None))    # Takes the start-up stall
+        silent_line = speak_live(synth, times, make_utterance(before_ssml["C"], voice, None))["wall"]
     takes = []
     try:
         for number, (r, key, before) in enumerate(order, 1):
             name = f"{key}{r}"
-            print(f"  take {number}/{len(order)} ({name}): {f'{quiet:.0f} s of silence' if key == 'A' else before}, "
-                  "then the sentence", flush=True)
+            print(f"  take {number}/{len(order)}: {quiet:.0f} s of silence, then listen", flush=True)
+            time.sleep(quiet)
             with objc.autorelease_pool():
                 if key == "A":
-                    time.sleep(quiet)
+                    time.sleep(silent_line + 0.1)   # As long as C's silent line, so A and C can't be told apart
                 else:
                     speak_live(synth, times, make_utterance(before_ssml[key], voice, None))
                     time.sleep(0.1)             # ORAC's pause between sentences
@@ -1336,7 +1345,7 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
                 result = speak_live(synth, times, make_utterance(sentence, voice, None))
             started = times.started or t_call
             finished = times.finished or t_call + result["wall"]
-            take = {"name": name, "key": key, "before": before, "mic": None, "heard": "-",
+            take = {"number": number, "name": name, "key": key, "before": before, "mic": None, "heard": "-",
                     "length": finished - started if times.started and times.finished else None,
                     "onsets": word_onsets(list(times.words)), "word_gap": None, "words_ref": False,
                     "rhythm": None, "rhythm_ref": False}
@@ -1346,7 +1355,7 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
                 mic.save(x, os.path.join(out_dir, f"live_{number:02d}_{name}.wav"))
                 take["mic"] = heard_by_mic(x, Microphone.RATE)
             if ask:
-                take["heard"] = ask_heard(f"take {name}")
+                take["heard"] = ask_heard(f"sentence in take {number}")
             takes.append(take)
     except KeyboardInterrupt:
         synth.stopSpeakingAtBoundary_(0)            # AVSpeechBoundaryImmediate
@@ -1376,15 +1385,16 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
 
     report()
     report(f"Live check: the sentence spoken live after {quiet:.0f} s of silence (A), straight after a sentence spoken")
-    report(f"aloud (B), and straight after a silent warm-up line (C), {repeats} times each")
-    report(f"  {'take':5} {'before it':26} {'length':>7} {'words':>6} {'mic':>6} {'pitch':>6} {'range':>7} {'rhythm':>7}  heard")
+    report(f"aloud (B), and straight after a silent warm-up line (C), {repeats} times each, in shuffled order")
+    report(f"  {'#':>2} {'take':5} {'before it':26} {'length':>7} {'words':>6} {'mic':>6} {'pitch':>6} {'range':>7} "
+           f"{'rhythm':>7}  heard")
     for t in takes:
         m = t["mic"] or {}
         words = "ref" if t["words_ref"] else "-" if t["word_gap"] is None else f"{t['word_gap'] * 1000:.0f}ms"
         level = "-" if not t["mic"] else "none" if m["level"] is None else f"{m['level']:.0f}dB"
         pitch = "-" if m.get("pitch") is None else f"{m['pitch']:.0f}Hz"
         rhythm = "ref" if t["rhythm_ref"] else fmt(t["rhythm"], "", 2)
-        report(f"  {t['name']:5} {t['before']:26} {fmt(t['length']):>7} {words:>6} {level:>6} {pitch:>6} "
+        report(f"  {t['number']:>2} {t['name']:5} {t['before']:26} {fmt(t['length']):>7} {words:>6} {level:>6} {pitch:>6} "
                f"{fmt(m.get('range'), 'st', 1):>7} {rhythm:>7}  {t['heard']}")
     report("length = the voice starting to finishing")
     report("words  = the most any word started early or late, against the reference take (the voice's own timings)")
@@ -1400,7 +1410,9 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
             report(f"  No audio at all for {', '.join(nothing)}: the recording stopped.")
         if heard < len(takes):
             report("  Headphones, a low input level, or a speakerphone or headset that cancels its own sound would")
-            report("  do this. To try another microphone: --list-mics, then --mic N.")
+            report("  do this. If the voice plays through a speakerphone, play it through another output for this")
+            report("  check (System Settings > Sound > Output), or record with another microphone (--list-mics,")
+            report("  then --mic N).")
     if not words_ok and not any(t["onsets"] for t in takes):
         report("The voice didn't report when each word started, so the word timings can't be compared.")
     report()
@@ -1454,7 +1466,7 @@ def main():
     ap.add_argument("--num-batch", type=int, help="batch size (default: orac_chat.py's OLLAMA_NUM_BATCH)")
     ap.add_argument("--llm", metavar="MODEL", help="stream a reply from this Ollama model during each round")
     ap.add_argument("--host", default="http://localhost:11434", help="Ollama URL")
-    ap.add_argument("--idle", type=float, help="seconds of silence before each round (default 90; --live-check 20)")
+    ap.add_argument("--idle", type=float, help="seconds of silence before each round (default 90) or take (--live-check: 20)")
     ap.add_argument("--rounds", type=int, help="rounds to run (default 4; --live-check 3)")
     ap.add_argument("--no-play", action="store_true", help="don't play the cold renders back")
     ap.add_argument("--no-ask", action="store_true", help="don't ask how each round sounded")
@@ -1467,7 +1479,7 @@ def main():
                     help="which SSML/utterance settings the voice obeys, and whether a phrase said first changes it")
     ap.add_argument("--live-check", action="store_true",
                     help="is a sentence spoken live any different after silence, after another sentence, or after a "
-                         "silent warm-up line? (records through the microphone; about three minutes)")
+                         "silent warm-up line? (records through the microphone; about five minutes)")
     ap.add_argument("--mic", type=int, metavar="N", help="with --live-check: record from input N (see --list-mics)")
     ap.add_argument("--list-mics", action="store_true", help="list the inputs --mic can record from, and exit")
     ap.add_argument("--from-log", nargs="?", const=os.path.join(ORAC_DIR, "ollama_debug.log"), metavar="FILE",

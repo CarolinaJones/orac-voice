@@ -20,7 +20,8 @@ Tools for tracking down the flat first sentence, and a few tweaks.
   over from one sentence to the next. Every earlier check compared renders, which can't show that. It
   compares when each word started (the voice's own timings) and records each take through the
   microphone for pitch; `--list-mics` and `--mic N` pick another input if the default can't hear the
-  voice. It only claims what it could measure.
+  voice. It only claims what it could measure. The takes come in shuffled order, and silence and the
+  silent line sound the same until the sentence starts, so they can be rated blind.
 - **`--from-log`** compares first sentences with the rest only within replies of two sentences or more.
 
 ### Tweaks
