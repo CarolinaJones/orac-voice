@@ -127,9 +127,11 @@ _raw_corrections = {
     r"\bwon't\b": "will not", r"\byou're\b": "you are", r"\bwe're\b": "we are", r"\bthey're\b": "they are",
 }
    
+# Longest patterns first, so compound entries ("neural-implant", "self-exiled") are applied before
+# the shorter words inside them ("implant", "exiled") rewrite them and leave them unmatched.
 COMPILED_CORRECTIONS = [
-    (re.compile(pattern, flags=re.IGNORECASE), phonetic) 
-    for pattern, phonetic in _raw_corrections.items()
+    (re.compile(pattern, flags=re.IGNORECASE), phonetic)
+    for pattern, phonetic in sorted(_raw_corrections.items(), key=lambda item: len(item[0]), reverse=True)
 ]
     
 def orac_phonetics(text):

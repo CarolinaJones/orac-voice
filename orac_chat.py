@@ -153,16 +153,30 @@ HALLUCINATION_REGEX = re.compile(r'(?i)(thank you|thanks for watching|subscribe|
 MOUSE_SCROLL_UP = re.compile(r'\x1b\[<64;\d+;\d+[Mm]')
 MOUSE_SCROLL_DOWN = re.compile(r'\x1b\[<65;\d+;\d+[Mm]')
 MOUSE_EVENT = re.compile(r'\x1b\[<\d+;\d+;\d+[Mm]')
-PURGE_CMD = ("re set", "clear history", "new subject")
-SHUTDOWN_CMD = ("shut down", "deactivate")
-HARDWARE_SHUTDOWN_CMD = ["activate system shutdown"]
+PURGE_CMD = ("re set", "clear history", "clear memory", "new subject")
+SHUTDOWN_CMD = ("shut down", "shutdown", "deactivate")
+HARDWARE_SHUTDOWN_CMD = ("activate system shutdown", "activate system shut down")
+COMMAND_FILLER = re.compile(rf"\b(?:{re.escape(ORAC_NAME.lower())}|orac|please|now|ok|okay)\b")
+
+# Conversation recall ("what did we talk about?") and references to earlier sessions. A request must
+# refer to *our conversation*, so lore questions such as "who was the last to join the crew?" or
+# "summarize the Cygnus Alpha mission" aren't hijacked into an archive/memory summary.
+RECALL_REGEX = re.compile(
+    r"\bwhat (?:did|were|have|was) (?:we|i)\b.{0,25}\b(?:talk|discuss|ask|say|said|tell|told|mention)"
+    r"|\b(?:recap|remind me what)\b"
+    r"|\bsummari[sz]e (?:our|this|that|the) (?:conversation|discussion|chat|session)\b")
+PAST_SESSION_REGEX = re.compile(
+    r"\b(?:yesterday|last (?:time|session|night|week)|previous (?:session|conversation|chat)|days? ago"
+    r"|earlier today|archives?|past records?|(?:on|last) (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b")
+ARCHIVE_REGEX = re.compile(r"\b(?:archives?|past records?)\b")
+TIME_QUESTION_REGEX = re.compile(r"\b(?:time|clock|hours?|temporal|date)\b")
 
 # PRE-COMPILED REGEX FOR TTS SANITIZATION #
 
 TTS_NUM_SPACER = re.compile(r'(?<![a-zA-Z])(\d{3,})(?![a-zA-Z])')
 TTS_ELLIPSIS = re.compile(r'\.{2,}')
-TTS_ARROGANT_ADVERBS = re.compile(r'(?i)\b(however|therefore|predictably|obviously|furthermore|evidently|naturally|clearly|as expected)[.,]*\s*', flags=re.IGNORECASE | re.VERBOSE)
-TTS_DELIBERATE_PRONOUNS = re.compile(r'(?<![.,;!?])\b(your|i|my)\b(?![.,;])', flags=re.IGNORECASE)
+TTS_ARROGANT_ADVERBS = re.compile(r'\b(however|therefore|predictably|obviously|furthermore|evidently|naturally|clearly|as expected)[.,]*\s*', flags=re.IGNORECASE)
+TTS_DELIBERATE_PRONOUNS = re.compile(r"(?<![.,;!?])\b(your|i|my)\b(?![.,;'’])", flags=re.IGNORECASE)   # Not in "I'm"/"I'd"
 TTS_POSSESSIVE_S = re.compile(r"\b([A-Z][a-z]+s)'(?!\w)")
 TTS_MARKDOWN = re.compile(r'[*`_~#>|+]')
 TTS_BRACKETS = re.compile(r'[\[\]{}()]')
@@ -302,7 +316,7 @@ class OracState:
         self.term_cols = TERMINAL_COLS
         self.term_rows = TERMINAL_ROWS
         self.debug = DEBUG_START
-        self.debug_col = DIM
+        self.debug_col = RESET if DEBUG_START else DIM
         self.sounds = {}      
         for name, path in {
             "s_ready": SOUND_READY,
@@ -325,7 +339,12 @@ try:
 except:
     old_term_settings = None
 
+_cleaned_up = False
+
 def cleanup_processes():
+    global _cleaned_up    # Runs explicitly, from __main__'s finally and via atexit: only act once
+    if _cleaned_up: return
+    _cleaned_up = True
     if serial_port:
         try:
             shutdown_lcd_display()
@@ -367,8 +386,10 @@ def save_archival_memory():
         if state.full_message_log:
             # Filter to ONLY save the user's questions to save massive token weight
             user_logs = [item for item in state.full_message_log if item[0] == 'user']
-            with open(archive_path, 'w', encoding='utf-8') as f:
+            tmp_path = archive_path + ".tmp"
+            with open(tmp_path, 'w', encoding='utf-8') as f:
                 json.dump({'log': existing_log + user_logs}, f, indent=4)
+            os.replace(tmp_path, archive_path)    # Atomic: a crash mid-write can't corrupt the day's archive
                 
     except Exception:
         pass
@@ -1003,11 +1024,11 @@ def parse_time_command(text):
             elif 'hour' in unit: mult = 3600
             return time.time() + (val * mult), f"{val} {unit}s"
             
-    a_match = re.search(r'(?:set\s+(?:a|an)\s+)?alarm for (\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?', clean_text)
+    a_match = re.search(r'(?:set\s+(?:a|an)\s+)?alarm for (\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\b\.?|p\.?m\b\.?)?', clean_text)
     if a_match:
         hr = int(a_match.group(1))
         mins = int(a_match.group(2)) if a_match.group(2) else 0
-        mer = a_match.group(3)
+        mer = a_match.group(3).replace('.', '') if a_match.group(3) else None    # Whisper writes "p.m."
         if mer == 'pm' and hr < 12: hr += 12
         if mer == 'am' and hr == 12: hr = 0
         now = datetime.now()
@@ -1331,9 +1352,9 @@ def hardware_power_off(tts, delay_minutes=0):
     state.running = False
 
     if delay_minutes > 0:
-        subprocess.run(["sudo", "/sbin/shutdown", "-h", f"+{delay_minutes}"])
+        subprocess.run(["sudo", "-n", "/sbin/shutdown", "-h", f"+{delay_minutes}"])
     else:
-        subprocess.run(["sudo", "/sbin/shutdown", "-h", "now"])
+        subprocess.run(["sudo", "-n", "/sbin/shutdown", "-h", "now"])   # -n: fail, don't hang on a password prompt
         
     sys.exit(0)
 
@@ -1370,7 +1391,7 @@ def shutdown_sequence(tts):
                         time.sleep(0.3)
                         if choice == 'y':
                             timestamp = time.strftime("%Y%m%d_%H%M%S")
-                            filename = os.path.join(TRANSCRIPT_DIR, f"transcripts/{TR}_{timestamp}.txt")
+                            filename = os.path.join(TRANSCRIPT_DIR or BASE_DIR, "transcripts", f"{TR}_{timestamp}.txt")
                             os.makedirs(os.path.dirname(filename), exist_ok=True)
                             with open(filename, "w", encoding="utf-8") as f:
                                 f.write(f"--- ORAC: SYSTEM TRANSCRIPT ---\n")
@@ -1469,13 +1490,6 @@ def startup_animation():
 #==================================================================================================#
 
 def search_archival_memory(user_text):
-    query_triggers = [
-        "yesterday", "last time", "last session", "previous", 
-        "archive", "past record", "days ago", "before"
-    ]
-    if not any(t in user_text.lower() for t in query_triggers):
-        return ""
-
     if TELETYPE_MODE:
         with state.terminal_lock:
             sys.stdout.write(f"● {A}SEARCHING ARCHIVAL DATABANKS...{RESET}\n")
@@ -1604,11 +1618,10 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     is_very_well = any(t in clean_prompt for t in ("answer the question","just answer","more detail","explain","just do it"))
     is_only_filler = prompt_words.issubset(filler_words) or (len(clean_prompt) <= 3 and clean_prompt not in {"why","how","who"})
     is_menial_task =  any(v in clean_prompt for v in ("set a course","lay in a course","operate the teleport","set us down"))
-    is_asking_time = any(w in clean_prompt for w in ("time", "clock", "hour", "temporal", "date"))
-    
-    summary_triggers = ["what did we talk about", "what were we talking about", "summarize", "recap", "remind me", "earlier", "yesterday", "last time", "last session", "previous", "archive", "past record", "days ago", "before", "last"]
-    is_memory_request = any(t in clean_prompt for t in summary_triggers)
-    explicit_past = any(t in clean_prompt for t in ["yesterday", "last", "previous", "archive", "past record", "days ago", "before"])
+    is_asking_time = bool(TIME_QUESTION_REGEX.search(clean_prompt))
+
+    is_memory_request = bool(RECALL_REGEX.search(clean_prompt) or ARCHIVE_REGEX.search(clean_prompt))
+    explicit_past = bool(PAST_SESSION_REGEX.search(clean_prompt))
     
     recent_user_messages = sum(1 for msg in state.history if msg['role'] == 'user')
 
@@ -1857,16 +1870,22 @@ def start_response(user_text, tts, teletype):
     state.stream_epoch += 1
     threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype, state.stream_epoch), daemon=True).start()
 
+def is_command(text, commands):
+    """True when the whole utterance is the command, give or take "ORAC", "please" or "now".
+    Substring matching fired on questions ("did Avon shut down the computer?"), and a sentence
+    merely containing 'activate system shutdown' would power the Mac off."""
+    words = COMMAND_FILLER.sub(" ", re.sub(r"[^a-z0-9 ]", " ", text.lower()))
+    return " ".join(words.split()) in commands
+
 def handle_user_text(user_text, tts, teletype):
     """Routes one typed or spoken line: system commands first, otherwise an LLM response.
     Returns False when the main loop should stop."""
-    lowered = user_text.lower()
-    if any(cmd in lowered for cmd in HARDWARE_SHUTDOWN_CMD):
+    if is_command(user_text, HARDWARE_SHUTDOWN_CMD):
         hardware_power_off(tts, delay_minutes=0)
         return False
-    if any(cmd in lowered for cmd in SHUTDOWN_CMD):
+    if is_command(user_text, SHUTDOWN_CMD):
         return not shutdown_sequence(tts)
-    if any(cmd in lowered for cmd in PURGE_CMD):
+    if is_command(user_text, PURGE_CMD):
         purge_memory(tts)
         return True
     start_response(user_text, tts, teletype)

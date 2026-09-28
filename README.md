@@ -170,7 +170,7 @@ TERMINAL SETTINGS:
 **..and then (From orac-voice Folder):**
 ```bash
 source orac-venv/bin/activate
-python3 orac_voice.py
+python3 orac_chat.py
 ```    
 - Boot Sequence: The Terminal will resize, display a booting animation, and calibrate to your room's ambient noise floor. *(Updates dynamically throughout conversation.)*
 
