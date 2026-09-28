@@ -174,6 +174,7 @@ TTS_LEAD_WEIRD = re.compile(r'^[^a-zA-Z0-9]+')
 TTS_TRAIL_PUNC = re.compile(r'[,;\-\s]+$')
 TTS_VERY_WELL = re.compile(r'(?i)\b(very well)[.,]*\s*')
 TTS_NAME_FIX = re.compile(rf',\s+({USER_NAME})[.,!]$')
+HAS_ALNUM = re.compile(r'[a-zA-Z0-9]')
 
 #==================================================================================================#
 #     							  DATA CORE & PROMPT ASSEMBLY                                      #
@@ -253,6 +254,7 @@ def count_tokens(text):
 
 # LCD SERIAL SETUP #
 serial_port = None
+lcd_lock = threading.Lock()
 if USE_LCD:
     try:
         import serial
@@ -270,7 +272,8 @@ class OracState:
         self.last_status = "INITIALIZING..."
         self.last_lcd_payload = ""
         self.last_active = time.time()
-        self.stream_epoch = 0.0
+        self.stream_epoch = 0                   # Bumped per request; older stream threads stand down
+        self.flash_seq = 0
         self.current_tokens = 0
         self.token_status = "NOMINAL"
         self.token_color = G
@@ -286,8 +289,7 @@ class OracState:
         self.scroll_offset = 0
         self.hist_lock = threading.RLock()
         self.input_buffer = ""
-        self.input_ready = threading.Event()
-        self.submitted_text = ""
+        self.input_queue = queue.Queue()        # Lines typed by the user, consumed by the main loop
         self.terminal_lock = threading.Lock()
         self.ui_redraw_event = threading.Event()
         self.text_selection_mode = False
@@ -465,8 +467,12 @@ def idle_status():
     return "● STANDBY", DIM
 
 def flash_status(text, color=A, duration=3.0):
+    state.flash_seq += 1
+    seq = state.flash_seq
+
     def restore():
-        if state.running and not state.is_shutdown.is_set():
+        # Only the newest flash restores the line, so overlapping flashes don't cut each other short
+        if seq == state.flash_seq and state.running and not state.is_shutdown.is_set():
             set_status(*idle_status())
 
     set_status(text, color)
@@ -592,10 +598,11 @@ def update_lcd_display():
                 led_state = "IDLE"
 
         payload = f"0:{l1}\n1:{l2}\n{bl_cmd}\nS:{led_state}\n"
-        
-        if state.last_lcd_payload != payload:
-            state.last_lcd_payload = payload
-            serial_port.write(payload.encode('utf-8'))
+
+        with lcd_lock:     # Called from several threads: one whole payload at a time on the wire
+            if state.last_lcd_payload != payload:
+                state.last_lcd_payload = payload
+                serial_port.write(payload.encode('utf-8'))
             
     except Exception:
         pass
@@ -607,9 +614,10 @@ def shutdown_lcd_display():
         l2 = "SYSTEM HALTED"[:16].ljust(16)
 
         payload = f"0:{l1}\n1:{l2}\nbacklight_off\nS:OFF\n"
-        
-        state.last_lcd_payload = payload
-        serial_port.write(payload.encode('utf-8'))
+
+        with lcd_lock:
+            state.last_lcd_payload = payload
+            serial_port.write(payload.encode('utf-8'))
             
     except Exception:
         pass
@@ -702,12 +710,26 @@ def redraw_scroll_region():
 #==================================================================================================#
 
 class SoundLooper:
+    """Looping NSSound shared by several threads. start(delay=...) can be cancelled by a stop()
+    issued before the delay expires, so a barge-in can't be followed by a stray hum."""
     def __init__(self, sound_path):
         self.sound_path = sound_path
         self.ns_sound = None
+        self._lock = threading.Lock()
+        self._generation = 0
 
-    def start(self):
-        if not self.ns_sound and os.path.exists(self.sound_path):
+    def start(self, delay=0.0):
+        with self._lock:
+            generation = self._generation
+        if delay > 0:
+            threading.Timer(delay, self._start, args=(generation,)).start()
+        else:
+            self._start(generation)
+
+    def _start(self, generation):
+        with self._lock:
+            if generation != self._generation or self.ns_sound or not os.path.exists(self.sound_path):
+                return
             with objc.autorelease_pool():
                 self.ns_sound = NSSound.alloc().initWithContentsOfFile_byReference_(self.sound_path, True)
                 if self.ns_sound:
@@ -715,12 +737,15 @@ class SoundLooper:
                     self.ns_sound.play()
 
     def stop(self):
-        if self.ns_sound:
-            self.ns_sound.stop()
-            self.ns_sound = None
+        with self._lock:
+            self._generation += 1
+            if self.ns_sound:
+                self.ns_sound.stop()
+                self.ns_sound = None
 
     def is_running(self):
-        return self.ns_sound is not None and self.ns_sound.isPlaying()
+        with self._lock:
+            return self.ns_sound is not None and self.ns_sound.isPlaying()
 
 processing_sound = SoundLooper(SOUND_PROCESSING)
 
@@ -810,7 +835,17 @@ class MacTTS:
     def stop_speaking(self):
         if self.synth:
             self.synth.stopSpeaking()
-            
+
+def wait_for_tts(tts, timeout=30.0):
+    """Blocks until every queued utterance has been spoken (or `timeout` expires).
+
+    Uses unfinished_tasks, not queue.empty(): the worker takes an utterance off the queue before
+    the synthesizer reports isSpeaking(), so empty() alone can return mid-sentence. The worker
+    calls task_done() only once an utterance has finished."""
+    deadline = time.time() + timeout
+    while time.time() < deadline and (tts.queue.unfinished_tasks or getattr(tts.synth, 'isSpeaking', lambda: False)()):
+        time.sleep(0.1)
+
 #==================================================================================================#
 #     									TELETYPE ENGINE                                            #
 #==================================================================================================#
@@ -1094,6 +1129,13 @@ signal.signal(signal.SIGWINCH, flag_ui_redraw)
 def alarm_worker(trigger_epoch, tts):
     while state.running and state.alarm_trigger_epoch == trigger_epoch:
         if time.time() >= trigger_epoch:
+            # Let a reply in progress finish, rather than talking over it and clearing its flags
+            while state.running and state.alarm_trigger_epoch == trigger_epoch and (
+                    state.is_processing.is_set() or state.is_speaking.is_set() or tts.queue.unfinished_tasks):
+                time.sleep(0.25)
+            if state.alarm_trigger_epoch != trigger_epoch:
+                break
+
             state.is_interrupted.clear()
             state.is_alarm_playing = True
             if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
@@ -1102,15 +1144,12 @@ def alarm_worker(trigger_epoch, tts):
             play_orac_fx("s_bracelet")
             time.sleep(0.7)          
             play_orac_fx("s_startup")
-            threading.Timer(0.3, processing_sound.start).start()
+            processing_sound.start(delay=0.3)
             state.is_processing.set()
             time.sleep(0.7)
             tts.say("Alert. The designated temporal marker has been reached.")
-            
-            while not tts.queue.empty() or getattr(tts.synth, 'isSpeaking', lambda: False)():
-                time.sleep(0.1)
-                
-            time.sleep(0.5)            
+            wait_for_tts(tts)
+            time.sleep(0.5)
             state.is_processing.clear()
             
             state.alarm_time_str = None
@@ -1270,16 +1309,14 @@ def hardware_power_off(tts, delay_minutes=0):
     set_status(f"{FL}●{NOFL} INITIATING TOTAL SYSTEM POWER DOWN...", R)
 
     play_orac_fx("s_startup")
-    threading.Timer(0.3, processing_sound.start).start()
+    processing_sound.start(delay=0.3)
     state.is_processing.set()
     time.sleep(0.7)
     
     farewell = "All principle circuits, deactivated. Power to bio-plasmic matrix: Terminating."
     tts.say(farewell)
-    
-    while not tts.queue.empty() or getattr(tts.synth, 'isSpeaking', lambda: False)():
-        time.sleep(0.1)
-    
+    wait_for_tts(tts)
+
     state.is_processing.clear()
     processing_sound.stop()
     time.sleep(0.1)
@@ -1510,12 +1547,35 @@ def preload_model():
         debug_line(f"[DEBUG] Model preload failed: {e}")
 
 def stream_ai_response(prompt, tts, teletype, epoch_id=None):
+    def is_current():
+        """False once a newer request has started: this thread must then leave shared state alone."""
+        return epoch_id is None or state.stream_epoch == epoch_id
+
+    def record_reply(text):
+        with state.hist_lock:    # Re-checked under the lock so a superseded thread can't slip a reply in
+            if is_current() and state.history and state.history[-1]['role'] == 'user':
+                state.history.append({'role': 'assistant', 'content': text})
+                state.full_message_log.append(('assistant', text, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
+    def begin_transmission():
+        set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
+        if TELETYPE_MODE:
+            with state.terminal_lock:
+                sys.stdout.write(f"{R}{ORAC_NAME} ▶ {RESET}")
+                sys.stdout.flush()
+            teletype.q.put("<START>")
+        else:
+            teletype.is_typing.set()
+
+    def speak(sentence):
+        clean_speech = sanitize_for_tts(sentence)
+        if HAS_ALNUM.search(clean_speech): tts.say(clean_speech)
+
     translated_prompt = translate_user_prompt(prompt)
 
     clean_prompt = prompt.lower().strip(".,!? ")
     prompt_words = set(clean_prompt.split())
     filler_words = {"ok","okay","fine","right","cool","whatever","uh","no","ah","oh","yes","indeed","understood"}
-    USER_NAME_lower = USER_NAME.lower()
 
     trigger_epoch, alarm_str = parse_time_command(clean_prompt)
     if trigger_epoch == -1:
@@ -1530,16 +1590,14 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     elif trigger_epoch:
         state.alarm_trigger_epoch = trigger_epoch
         state.alarm_time_str = alarm_str
+        play_orac_fx("s_bracelet")
+        time.sleep(0.7)
         if TELETYPE_MODE:
             with state.terminal_lock:
-                play_orac_fx("s_bracelet")
-                time.sleep(0.7)
                 sys.stdout.write(f"\r\033[2K{G}● INTERNAL TIMER SECURED FOR: {alarm_str}{RESET}\n\n")
                 sys.stdout.flush()
             if state.scroll_offset > 0: resume_live_view()
         else:
-            play_orac_fx("s_bracelet")
-            time.sleep(0.7)
             set_status(f"● INTERNAL TIMER SECURED FOR: {alarm_str}", G)
         threading.Thread(target=alarm_worker, args=(trigger_epoch, tts), daemon=True).start()
 
@@ -1582,6 +1640,11 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     final_prompt = translated_prompt + override_text + archive_injection + adaptive_constraint
 
     with state.hist_lock:
+        if not is_current():
+            return
+        if state.history and state.history[-1]['role'] == 'user':
+            # A superseded request never recorded its reply: keep user/assistant turns alternating
+            state.history.append({'role': 'assistant', 'content': "[transmission interrupted]"})
         if len(state.history) == 0:
             final_prompt = FIRST_TURN_TAG + final_prompt
         state.history.append({'role': 'user', 'content': final_prompt})
@@ -1603,13 +1666,15 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
         set_status("● OPTIMIZING MEMORY CORRIDORS...", A)
     
         play_orac_fx("s_startup")
-        threading.Timer(0.3, processing_sound.start).start()
+        processing_sound.start(delay=0.3)
         time.sleep(0.7)
         tts.say(random.choice(PRUNE_STALL_LINES))
     
         summary = generate_compaction_summary(pruned_msgs)
-        
+
         with state.hist_lock:
+            if not is_current():      # A newer request owns the history now; its own pass will prune
+                return
             state.history = remaining_hist
             
             if summary and state.history:
@@ -1634,6 +1699,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     update_header_only()
     
     with state.hist_lock:
+        if not is_current():
+            return
         temp_history = list(state.history)
 
     messages_to_send = [{'role': 'system', 'content': SYSTEM_INSTRUCTION}]
@@ -1641,7 +1708,7 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
 
     if not pruned:
         play_orac_fx("s_startup")
-        threading.Timer(0.3, processing_sound.start).start()
+        processing_sound.start(delay=0.3)
 
     if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
     set_status(f"{FL}●{NOFL} ORAC ONLINE: PROCESSING...", A)
@@ -1671,7 +1738,7 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 'num_predict': 400,
             }
         ):
-            if state.is_interrupted.is_set() or (epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id):
+            if state.is_interrupted.is_set() or not is_current():
                 break
             
             if first_chunk:
@@ -1680,16 +1747,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 if USE_LCD: update_lcd_display()
                 
                 debug_line(f"[DEBUG] LLM Time to First Token took: {state.last_ttft_time}", row_offset=3)
-                
-                set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
-                if TELETYPE_MODE:
-                    with state.terminal_lock:
-                        sys.stdout.write(f"{R}{ORAC_NAME} ▶ {RESET}")
-                        sys.stdout.flush()
-                    teletype.q.put("<START>")
-                else:
-                    teletype.is_typing.set()
-                first_chunk = False           
+                begin_transmission()
+                first_chunk = False
             
             content = chunk['message']['content'].replace('*', '')
             response_chunks.append(content)
@@ -1710,32 +1769,20 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
                     split_point = match.end()
                     sentence_to_say = sentence_buffer[:split_point].strip()
                     if len(sentence_to_say) > 2:
-                        clean_speech = sanitize_for_tts(sentence_to_say)
-                        if re.search(r'[a-zA-Z0-9]', clean_speech): tts.say(clean_speech)
+                        speak(sentence_to_say)
                     sentence_buffer = sentence_buffer[split_point:]
                 else: break
     
-        is_stale = epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id
-        if not state.is_interrupted.is_set() and not is_stale:
-            if first_chunk: 
-                set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
-                if TELETYPE_MODE:
-                    with state.terminal_lock:
-                        sys.stdout.write(f"{R}{ORAC_NAME} ▶ {RESET}")
-                        sys.stdout.flush()
-                    teletype.q.put("<START>")
-                else:
-                    teletype.is_typing.set()
+        if not is_current():
+            return      # Superseded: the newer request owns the teletype, TTS queue and history now
 
+        if not state.is_interrupted.is_set():
+            if first_chunk:
+                begin_transmission()
             if sentence_buffer.strip():
-                 clean_speech = sanitize_for_tts(sentence_buffer.strip())
-                 if re.search(r'[a-zA-Z0-9]', clean_speech): tts.say(clean_speech)
+                speak(sentence_buffer.strip())
 
-            clean_history_text = "".join(response_chunks).strip()
-            with state.hist_lock:
-                state.history.append({'role': 'assistant', 'content': clean_history_text})
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                state.full_message_log.append(('assistant', clean_history_text, timestamp))
+            record_reply("".join(response_chunks).strip())
 
             if TELETYPE_MODE:
                 teletype.q.put("<END>")
@@ -1745,18 +1792,10 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             with teletype.q.mutex: teletype.q.queue.clear()
             teletype.is_typing.clear()
             partial_text = "".join(response_chunks).strip()
-            fallback_text = partial_text + " ... [INTERRUPTED]" if partial_text else "[transmission interrupted]"
-            
-            with state.hist_lock:
-                if state.history and state.history[-1]['role'] == 'user':
-                    state.history.append({'role': 'assistant', 'content': fallback_text})
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    state.full_message_log.append(('assistant', fallback_text, timestamp))
-                
+            record_reply(partial_text + " ... [INTERRUPTED]" if partial_text else "[transmission interrupted]")
+
     except Exception as e:
-        is_stale = epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id
-    
-        if not is_stale:
+        if is_current():
             if TELETYPE_MODE:
                 with state.terminal_lock:
                     sys.stdout.write(f"\n{R}● DATALINK SEVERED: {e}{RESET}\n")
@@ -1764,15 +1803,10 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             else:
                 set_status(f"● DATALINK SEVERED: {e}", R)
             state.is_interrupted.set()
-    
-            with state.hist_lock:
-                if state.history and state.history[-1]['role'] == 'user':
-                    state.history.append({'role': 'assistant', 'content': "[DATALINK SEVERED]"})
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    state.full_message_log.append(('assistant', "[DATALINK SEVERED]", timestamp))
-    
+            record_reply("[DATALINK SEVERED]")
+
     finally:
-        if epoch_id is None or getattr(state, 'stream_epoch', None) == epoch_id:
+        if is_current():
             teletype.is_typing.clear()
             state.is_processing.clear()
             state.is_interrupted.clear()
@@ -1796,14 +1830,11 @@ def purge_memory(tts):
 
     state.is_interrupted.clear()
     play_orac_fx("s_startup")
-    threading.Timer(0.3, processing_sound.start).start()
+    processing_sound.start(delay=0.3)
     state.is_processing.set()
     time.sleep(0.7)
     tts.say("   Very well. State your enquiry.")
-
-    while not tts.queue.empty() or getattr(tts.synth, 'isSpeaking', lambda: False)():
-        time.sleep(0.1)
-
+    wait_for_tts(tts)
     time.sleep(0.5)
     state.is_processing.clear()
 
@@ -1823,7 +1854,7 @@ def start_response(user_text, tts, teletype):
     state.is_interrupted.clear()
     state.is_listening.clear()
     state.is_processing.set()
-    state.stream_epoch = time.time()
+    state.stream_epoch += 1
     threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype, state.stream_epoch), daemon=True).start()
 
 def handle_user_text(user_text, tts, teletype):
@@ -1842,13 +1873,16 @@ def handle_user_text(user_text, tts, teletype):
     return True
 
 def keyboard_listener(tts, teletype):
-    fd = sys.stdin.fileno()
     try:
+        fd = sys.stdin.fileno()
         tty.setcbreak(fd)
         attrs = termios.tcgetattr(fd)
         attrs[3] = attrs[3] & ~termios.ISIG
         termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
-        while state.running:
+    except Exception:
+        return      # stdin isn't a terminal: no keyboard control
+    while state.running:
+        try:        # One failed keystroke/redraw must not kill keyboard control (ESC, Ctrl+C) for good
             if state.is_shutdown.is_set():
                 time.sleep(0.1)
                 continue
@@ -1923,14 +1957,12 @@ def keyboard_listener(tts, teletype):
                         if not state.is_shutdown.is_set(): render_input_box()
                         trigger_barge_in(tts, teletype)
                     elif char == '\x03':
-                        state.submitted_text = "shut down"
-                        state.input_ready.set()
+                        state.input_queue.put("shut down")
                         state.input_buffer = ""
                         if not state.is_shutdown.is_set(): render_input_box()
                     elif char in ('\r', '\n'):
                         if state.input_buffer.strip():
-                            state.submitted_text = state.input_buffer.strip()
-                            state.input_ready.set()
+                            state.input_queue.put(state.input_buffer.strip())
                         state.input_buffer = ""
                         if not state.is_shutdown.is_set(): render_input_box()
                     elif char in ('\x7f', '\b'):
@@ -1962,7 +1994,8 @@ def keyboard_listener(tts, teletype):
                         if char.isprintable() and not state.is_shutdown.is_set():
                             state.input_buffer += char
                             render_input_box()
-    except Exception: pass
+        except Exception:
+            time.sleep(0.1)
 
 def run_local_bot():
     recognizer = sr.Recognizer()
@@ -2021,7 +2054,7 @@ def run_local_bot():
                 while state.running:
                     bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.queue.empty()
 
-                    if state.input_ready.is_set():
+                    if not state.input_queue.empty():
                         if bot_busy:
                             trigger_barge_in(tts, teletype)
                             start_wait = time.time()
@@ -2031,8 +2064,7 @@ def run_local_bot():
                                     break
                                 time.sleep(0.05)
 
-                        user_text = state.submitted_text
-                        state.input_ready.clear()
+                        user_text = state.input_queue.get()
                         if not handle_user_text(user_text, tts, teletype): break
                         continue
 
