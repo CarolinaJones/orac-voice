@@ -59,14 +59,17 @@ class SpeechTimes(NSObject, protocols=_DELEGATE_PROTOCOLS):
         self = objc.super(SpeechTimes, self).init()
         if self is None:
             return None
-        self.started = self.finished = None
+        self.started = self.finished = self.target = None
         return self
 
+    # Only the utterance being measured counts: a render's callbacks can arrive late
     def speechSynthesizer_didStartSpeechUtterance_(self, synth, utterance):
-        self.started = time.perf_counter()
+        if utterance == self.target:
+            self.started = time.perf_counter()
 
     def speechSynthesizer_didFinishSpeechUtterance_(self, synth, utterance):
-        self.finished = time.perf_counter()
+        if utterance == self.target:
+            self.finished = time.perf_counter()
 
 
 def pump(seconds=0.02):
@@ -125,6 +128,7 @@ def make_utterance(text, voice, rate):
 def speak_live(synth, times, utterance, timeout=60.0):
     """Real-time speech, as ORAC does it. Returns start latency and total wall time."""
     times.started = times.finished = None
+    times.target = utterance
     t0 = time.perf_counter()
     synth.speakUtterance_(utterance)
     seen_speaking = False
@@ -174,6 +178,8 @@ def render(synth, utterance, path, timeout=60.0):
         pump()
         if st["last"] and time.perf_counter() - st["last"] > 3.0:
             break                   # No end marker: 3 s without a buffer counts as done
+        if st["first"] is None and time.perf_counter() - t0 > 15.0:
+            break                   # Nothing at all: this voice may not support offline rendering
     audio_file, st["file"] = st["file"], None
     if audio_file is not None and audio_file.respondsToSelector_("close"):
         audio_file.close()          # macOS 15+; older versions close when the object is released
