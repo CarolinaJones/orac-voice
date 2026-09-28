@@ -6,7 +6,7 @@ A quick-reference guide to operating ORAC... every voice command, keyboard short
 
 ## 1. Talking to ORAC
 
-ORAC listens continuously once online, there's no push-to-talk button. Just speak naturally. He will respond in character: pedantic, sardonic, and reluctant to waste words on trivial questions.
+ORAC listens continuously once online, there's no push-to-talk button. Just speak naturally. Just after start-up, the status line shows "LOADING LANGUAGE MODEL" (the LCD: "LOADING MODEL...") while the model loads; a question asked then is answered once it's ready. He will respond in character: pedantic, sardonic, and reluctant to waste words on trivial questions.
 
 To interrupt him mid-response, press **Esc** (barge-in), or pull the activator key, (if you’re using it.) He will halt immediately and register the override.
 

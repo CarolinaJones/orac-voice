@@ -393,6 +393,7 @@ if USE_LCD or USE_ACTIVATOR:
 class OracState:
     def __init__(self):
         self.running = True
+        self.model_ready = threading.Event()        # Set when the boot preload has finished (or failed)
         self.last_stt_time = "--"
         self.last_ttft_time = "--"
         self.last_status = "INITIALIZING..."
@@ -670,6 +671,8 @@ def idle_status():
         return "● TEXT SELECTION MODE ACTIVE (OPT+T to exit)", A
     if state.mic_muted:
         return "● MICROPHONE MUTED (Option+M to un-mute)", R
+    if not state.model_ready.is_set() and not state.is_processing.is_set():
+        return "● LOADING LANGUAGE MODEL...", A
     if state.is_processing.is_set():
         return "● ORAC ONLINE: PROCESSING...", A
     if state.is_speaking.is_set():
@@ -801,6 +804,7 @@ LCD_STATUS_RULES = [(re.compile(p), r) for p, r in [
     (r"MICROPHONE DISABLED",                 "MIC DISABLED"),
     (r"MICROPHONE ACTIVE",                   "MIC ACTIVE"),
     (r"ORAC ONLINE: PROCESSING",             "PROCESSING..."),
+    (r"LOADING LANGUAGE MODEL",              "LOADING MODEL..."),
     (r"TRANSMITTING",                        "TRANSMITTING..."),
     (r"INITIATE VOICE COMMUNICATIONS",       "LISTENING..."),
     (r"CRITICAL OVERRIDE DETECTED",          "INPUT REQUIRED"),
@@ -888,7 +892,7 @@ def _update_lcd_display():
         
         if "TRANSMITTING" in status:
             led_state = "SPK"
-        elif any(x in status for x in ["PROCESSING", "OPTIMIZING", "DECODING", "SAMPLING"]):
+        elif any(x in status for x in ["PROCESSING", "OPTIMIZING", "DECODING", "SAMPLING", "LOADING"]):
             led_state = "PROC"
         elif "MUTED" in status:
             led_state = "MUT"
@@ -1633,6 +1637,7 @@ def alarm_worker(trigger_epoch, tts):
 
 def speak_now(teletype):
     was_listening = False
+    was_ready = state.model_ready.is_set()
     while state.running:
         mic_m = state.mic_muted
         text_m = state.text_selection_mode
@@ -1645,10 +1650,10 @@ def speak_now(teletype):
             continue
 
         if state.is_listening.wait(timeout=0.5):
-            if not was_listening and not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
-                tc = state.token_color
-                set_status(f"● INITIATE VOICE COMMUNICATIONS {tc}{FL}▶{NOFL}{RESET}", G)
-                was_listening = True 
+            ready = state.model_ready.is_set()
+            if (not was_listening or ready != was_ready) and not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
+                set_status(*idle_status())      # "Initiate voice communications", or "loading" until the model is ready
+                was_listening, was_ready = True, ready
             time.sleep(0.1)
         else:
             was_listening = False 
@@ -2334,7 +2339,7 @@ def preload_model():
     the same prompt prefix as a real first turn, so that turn re-uses the cache. """
     t_start = time.time()
     try:
-        ollama_client.chat(
+        response = ollama_client.chat(
             model=OLLAMA_MODEL,
             messages=[{'role': 'system', 'content': SYSTEM_INSTRUCTION},
                       {'role': 'user', 'content': FIRST_TURN_TAG}],
@@ -2342,10 +2347,23 @@ def preload_model():
             keep_alive=OLLAMA_KEEP_ALIVE,
             options={**LLM_RUNNER_OPTIONS, 'num_predict': 1}
         )
+        log_error(f"Model preload ({OLLAMA_MODEL}): {time.time() - t_start:.1f}s; {model_timings(response)}")
         debug_line(f"[DEBUG] Model preloaded in {time.time() - t_start:.2f}s")
     except Exception as e:
         log_error(f"preload_model: {type(e).__name__}: {e}")
         debug_line(f"[DEBUG] Model preload failed: {e}")
+    finally:
+        state.model_ready.set()
+
+
+def model_timings(response):
+    """ Where Ollama spent a request's time, from its final message: loading the model, evaluating the
+        prompt (after a prompt-cache hit only the new part is evaluated) and generating. """
+    def seconds(key):
+        return (response.get(key) or 0) / 1e9
+    return (f"load {seconds('load_duration'):.1f}s, prompt {response.get('prompt_eval_count') or 0} tokens in "
+            f"{seconds('prompt_eval_duration'):.1f}s, reply {response.get('eval_count') or 0} tokens in "
+            f"{seconds('eval_duration'):.1f}s")
 
 # B A R G E - I N #
 
@@ -2620,9 +2638,12 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 # request-level stop list replaces the model's own stop parameters
             }
         )
+        timings = None
         for chunk in interruptible(stream, epoch_id):
             if state.is_interrupted.is_set() or (epoch_id is not None and state.stream_epoch != epoch_id):
                 break
+            if chunk.get('done'):
+                timings = model_timings(chunk)
             
             if first_chunk:
                 t_llm_first_token = time.time()
@@ -2680,6 +2701,8 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 else:
                     break          
     
+        if timings:
+            log_error(f"Reply: first token after {state.last_ttft_time}; {timings}")
         if epoch_id is not None and state.stream_epoch not in (epoch_id, 0.0):
             return      # Superseded by a newer request, which now owns the teletype, TTS queue and history
 

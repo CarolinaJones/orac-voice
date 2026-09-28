@@ -19,6 +19,11 @@ A performance, reliability and tidy-up release. You don't need to change any set
   `num_batch`, `num_keep`), `keep_alive` and `think=False` as normal replies. Different options
   made Ollama reload the model, and leaving out `keep_alive` reset it to Ollama's 5-minute default.
 - **New `OLLAMA_KEEP_ALIVE` setting** (default 4 hours).
+- **"LOADING LANGUAGE MODEL" status.** Shown on screen and on the LCD ("LOADING MODEL...") until the
+  boot preload has finished. A question asked before then waits for it, which is where a slow first
+  reply comes from after switching models (about 15 s with `gemma4:12b`, 30 s with the MLX model).
+- **Model timings in `ollama_debug.log`.** For the preload and for every reply: time to first token,
+  model load time, prompt tokens evaluated (few means the prompt cache was used) and generation.
 - **Gemma 3 stop strings removed.** Gemma 4 uses different turn markers. A stop list sent with the
   request also replaced the model's own.
 
@@ -47,9 +52,10 @@ A performance, reliability and tidy-up release. You don't need to change any set
   - After each round it asks how the speech sounded, and saves the settings and results table to
     a text file next to the script.
   - `--voice-check` (or `--ssml-check`) renders the sentence once per setting (SSML rate, pitch,
-    volume, emphasis and break, and the utterance's rate and pitch multiplier) and reports which
-    ones change the audio. It also tests whether a phrase said first (the old warm-up line) changes
-    how the sentence is spoken, and how the voice's very first render differs once it settles.
+    volume, emphasis and break, and the utterance's rate and pitch multiplier), each against the
+    unchanged sentence rendered just before it, and reports which ones change the audio. It also
+    tests whether a phrase said first (the old warm-up line) or a sentence at another speed changes
+    the next sentence, and compares the voice's very first render with a later one.
   - `--say --text "..."` speaks one sentence with ORAC's settings, to try wording by ear.
 - **Measured with the probe:** a Personal Voice ignores SSML pitch, SSML emphasis and the pitch
   multiplier (the renders are byte-identical), and obeys rate, volume and pauses. The settings'

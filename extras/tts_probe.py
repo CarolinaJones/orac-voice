@@ -606,13 +606,13 @@ SSML_CHECKS = [
     ("SSML volume x-soft",   "SSML volume",     {"ssml": {"volume": "x-soft"}}),
     ("SSML volume x-loud",   "SSML volume",     {"ssml": {"volume": "x-loud"}}),
     ("SSML emphasis strong", "SSML emphasis",   {"ssml": {}, "emphasis": "strong"}),
-    ("SSML break 600ms",     "SSML break",      {"ssml": {}, "break": "600ms"}),
+    ("SSML break 600ms",     "SSML break",      {"ssml": {}, "split": True, "break": "600ms"}),
     ("pitchMultiplier 0.5",  "pitchMultiplier", {"pitch_multiplier": 0.5}),
     ("pitchMultiplier 2.0",  "pitchMultiplier", {"pitch_multiplier": 2.0}),
     ("rate 0.35",            "utterance rate",  {"rate": 0.35}),
     ("rate 0.65",            "utterance rate",  {"rate": 0.65}),
 ]
-SETTLE_SECONDS = 8      # The voice's first renders can come out slightly differently; later ones repeat exactly
+SETTLE_SECONDS = 3      # Renders for this long first; the first one is compared with a later one
 
 
 def check_utterance(text, voice, how):
@@ -624,10 +624,16 @@ def check_utterance(text, voice, how):
         return utterance
     ssml = build_ssml(text, how["ssml"], how.get("emphasis", ""))
     split = re.search(r"[.!?]\s+", text)
-    if "break" in how and split:            # A pause after the first sentence
+    if how.get("split") and split:          # Two <s> sentences, with the pause under test between them
         first, rest = build_ssml(text[:split.end()].strip()), build_ssml(text[split.end():])
-        ssml = f'<speak>{first[7:-8]}<break time="{how["break"]}"/>{rest[7:-8]}</speak>'
+        pause = f'<break time="{how["break"]}"/>' if "break" in how else ""
+        ssml = f'<speak>{first[7:-8]}{pause}{rest[7:-8]}</speak>'
     return make_utterance(ssml, voice, None)
+
+
+def baseline_of(how):
+    """The same render without the setting under test."""
+    return {"ssml": {}, "split": True} if how.get("split") else {"ssml": {}} if "ssml" in how else {}
 
 
 def render_to(synth, utterance, path):
@@ -662,28 +668,46 @@ def startup_note(first, later_raw):
 def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report):
     """Renders `text` once per setting and reports which settings change the audio."""
     print(f"  letting the voice settle ({SETTLE_SECONDS} s)", flush=True)
-    started, first = time.perf_counter(), None
-    while time.perf_counter() - started < SETTLE_SECONDS:
+    started, first, last = time.perf_counter(), None, None
+    while time.perf_counter() - started < SETTLE_SECONDS or last is None:
         rendered = render_to(synth, check_utterance(text, voice, {}),
                              os.path.join(out_dir, "00_first_render.caf" if first is None else "00_settling.caf"))
         if rendered is None:
             report("The voice produced no audio: it may not support offline rendering.")
             return None
-        first = first or rendered
+        if first is None:
+            first = rendered
+        else:
+            last = rendered
+    report()
+    report(f"Start-up: the voice's very first render vs the same render {SETTLE_SECONDS} s later: {startup_note(first, last[2])}")
+    # Before any rate is changed: does a sentence at another speed change the next one?
+    carry_over_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
 
     checks = list(SSML_CHECKS) + [("ORAC's SSML", None, {"ssml": orac_prosody, "emphasis": orac_emphasis})]
     if orac_emphasis:
         checks.append(("ORAC's SSML, no emphasis", None, {"ssml": orac_prosody}))
     results = {}
     for number, (label, control, how) in enumerate(checks, 1):
-        print(f"  rendering {number}/{len(checks)}: {label}", flush=True)
-        path = os.path.join(out_dir, f"{number:02d}_{re.sub(r'[^A-Za-z0-9.%-]+', '_', label)}.caf")
-        rendered = render_to(synth, check_utterance(text, voice, how), path)
+        name = f"{number:02d}_{re.sub(r'[^A-Za-z0-9.%-]+', '_', label)}"
+        base = None
+        if number > 2:          # A fresh baseline (plain or SSML) rendered just before this variant
+            print(f"  rendering {number}/{len(checks)}: baseline, then {label}", flush=True)
+            base_raw = render_to(synth, check_utterance(text, voice, baseline_of(how)),
+                                 os.path.join(out_dir, f"{name}_baseline.caf"))
+            if base_raw is None:
+                report("The voice produced no audio for a baseline.")
+                return None
+            base = {"raw": base_raw[2], **analyse(*base_raw)}
+        else:
+            print(f"  rendering {number}/{len(checks)}: {label}", flush=True)
+        rendered = render_to(synth, check_utterance(text, voice, how), os.path.join(out_dir, f"{name}.caf"))
         if rendered is None:
             report(f"The voice produced no audio for {label!r}.")
             return None
         rate, layout, raw = rendered
-        results[label] = {"control": control, "ssml": "ssml" in how, "raw": raw, **analyse(rate, layout, raw)}
+        results[label] = {"control": control, "ssml": "ssml" in how, "raw": raw, "base": base,
+                          **analyse(rate, layout, raw)}
 
     def compare(row, base):
         if row["raw"] == base["raw"]:
@@ -697,9 +721,7 @@ def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
             notes.append(f"level {row['level'] - base['level']:+.1f} dB")
         return ", ".join(notes) or "different audio, same length, pitch and level"
 
-    plain, ssml = results["plain text"], results["SSML, no settings"]
-    report()
-    report(f"Start-up: the voice's very first render vs the same render once settled: {startup_note(first, plain['raw'])}")
+    plain = results["plain text"]
     report()
     report("SSML check: the same sentence rendered with one setting changed at a time")
     report(f"{'render':26} {'length':>7} {'speech':>7} {'pitch':>7} {'range':>6} {'level':>7}  compared with its baseline")
@@ -709,22 +731,16 @@ def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
         elif label == "SSML, no settings":
             versus = f"baseline for the SSML rows; vs plain text: {compare(row, plain)}"
         else:
-            versus = compare(row, ssml if row["ssml"] else plain)
+            versus = compare(row, row["base"])
         report(f"{label:26} {fmt(row['length']):>7} {fmt(row['speech']):>7} {fmt(row['pitch'], 'Hz', 0):>7} "
                f"{fmt(row['range'], 'st', 1):>6} {fmt(row['level'], 'dB', 1):>7}  {versus}")
+    report("(each row is compared with the plain or SSML sentence rendered just before it)")
     report()
     report("Verdict (does the voice obey the setting?)")
     for control in dict.fromkeys(row["control"] for row in results.values() if row["control"]):
         rows = {label: row for label, row in results.items() if row["control"] == control}
-        base = ssml if control.startswith("SSML") else plain
-        raws = [row["raw"] for row in rows.values()]
-        if len(raws) > 1:           # Opposite values that give the same audio: ignored
-            ignored = all(raw == raws[0] for raw in raws)
-            detail = "both values give identical audio" if ignored else \
-                "; ".join(f"{label}: {compare(row, base)}" for label, row in rows.items())
-        else:
-            ignored = raws[0] == base["raw"]
-            detail = "; ".join(f"{label}: {compare(row, base)}" for label, row in rows.items())
+        ignored = all(row["raw"] == row["base"]["raw"] for row in rows.values())
+        detail = "; ".join(f"{label}: {compare(row, row['base'])}" for label, row in rows.items())
         report(f"  {control:16} {'IGNORED' if ignored else 'obeyed':8} ({detail})")
     report()
     report("length = the whole render, speech = first to last sound, pitch = median voice pitch,")
@@ -733,6 +749,39 @@ def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
 
 
 PRIMING_PHRASE = "I find your discourse irritatingly tedious."      # ORAC's old warm-up line
+
+
+def carry_over_check(synth, voice, text, prosody, emphasis, out_dir, report):
+    """Does a sentence spoken at another speed change the next one? Once for a sentence that doesn't
+    set its own rate, once for ORAC's SSML (which always does)."""
+    fast = build_ssml(text, {"rate": "150%"})
+    report()
+    report("Carry-over check: the same sentence rendered before and after one at rate 150%")
+    changed = []
+    for number, (label, ssml) in enumerate((("without its own rate", build_ssml(text)),
+                                            ("with ORAC's SSML (rate set)", build_ssml(text, prosody, emphasis))), 1):
+        print(f"  carry-over {number}/2: {label}", flush=True)
+        before = render_to(synth, make_utterance(ssml, voice, None), os.path.join(out_dir, f"k{number}_before.caf"))
+        render_to(synth, make_utterance(fast, voice, None), os.path.join(out_dir, f"k{number}_fast.caf"))
+        after = render_to(synth, make_utterance(ssml, voice, None), os.path.join(out_dir, f"k{number}_after.caf"))
+        if before is None or after is None:
+            report("  The voice produced no audio for part of the carry-over check.")
+            return
+        if before[2] == after[2]:
+            verdict = "identical before and after"
+        else:
+            b, a = analyse(*before), analyse(*after)
+            verdict = f"CHANGED after the fast sentence (length {a['length'] - b['length']:+.2f}s)"
+            changed.append(number)
+        report(f"  {label:30} {verdict}")
+    if changed == [1]:
+        report("The voice carries its speed over to a sentence that doesn't set one; ORAC's sentences set their")
+        report("own rate, so the one before can't affect them.")
+    elif 2 in changed:
+        report("Even a sentence with its own rate came out differently after the fast one: ORAC's speech can")
+        report("depend on what was said before it.")
+    else:
+        report("No carry-over: the sentence before doesn't affect the next one.")
 
 
 def context_check(synth, times, voice, text, prosody, emphasis, baseline_raw, out_dir, report):

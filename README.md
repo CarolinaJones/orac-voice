@@ -187,7 +187,7 @@ python3 orac_chat.py
 ```    
 - Boot Sequence: The Terminal will resize, display a booting animation, and calibrate to your room's ambient noise floor. *(Updates dynamically throughout conversation.)*
 
-- Interacting: Address ORAC naturally. The system is voice-activated but ignores background noise. Press ESC to interrupt. *(The model loads into RAM in the background while ORAC boots. Once loaded you should hear a response within 1-2 seconds. The model stays loaded in memory for 4 hours.)*
+- Interacting: Address ORAC naturally. The system is voice-activated but ignores background noise. Press ESC to interrupt. *(The model loads into RAM in the background while ORAC boots; the status line shows "LOADING LANGUAGE MODEL" until it's ready. Once loaded you should hear a response within 1-2 seconds. The model stays loaded in memory for 4 hours.)*
 
 - Keyboard Entry: You can manually type text into the bottom UI bar. *(Typing and entering text while ORAC is talking, will "barge-in".)* While ORAC is not actively talking, you can use arrow keys or mouse scroll to review your session. Use `FN` key + `CMD+ C & V` as usual, for copy and paste.
 
