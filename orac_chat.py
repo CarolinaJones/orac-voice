@@ -2680,14 +2680,23 @@ def start_response(user_text, tts, teletype):
 
 def exit_from_keyboard(tts, teletype):
     """ Ctrl+C: runs the normal shutdown sequence (save prompt, or auto-save when headless) here in the
-        keyboard thread, then ends the process once cleanup has run. Pressing C at the prompt carries on. """
+        keyboard thread; pressing C at the prompt carries on. To finish, the main thread is interrupted so
+        Python exits normally and libraries release what they hold. (Ending with os._exit() skipped that and
+        left a semaphore behind: the "resource_tracker: ... leaked semaphore" warning.) """
     state.input_buffer = ""
     trigger_barge_in(tts, teletype)             # Stop any reply in progress first
     try:
         shutdown_sequence(tts)                  # Returns False if the user pressed C
     except SystemExit:
-        cleanup_processes()
-        os._exit(0)                             # sys.exit() would only end this thread; the main loop may be mid-listen
+        watchdog = threading.Timer(5.0, _force_exit)    # Fallback, only if the main thread can't unwind in time
+        watchdog.daemon = True
+        watchdog.start()
+        try: signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)   # Main loop exits via KeyboardInterrupt
+        except Exception: _force_exit()
+
+def _force_exit():
+    cleanup_processes()
+    os._exit(0)
 
 def keyboard_listener(tts, teletype):
     """ Restarts the listener if it ever dies. """
@@ -3077,4 +3086,5 @@ if __name__ == "__main__":
         cleanup_processes()
         sys.stdout.write(f"\n{R}{FL}●{NOFL} CRITICAL ERROR ON STARTUP: {e}{RESET}\n")
     finally:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)    # A late SIGINT mustn't interrupt the cleanup
         cleanup_processes()
