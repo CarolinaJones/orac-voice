@@ -129,7 +129,7 @@ OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Testing against 'flattening' is
 OLLAMA_TIMEOUT = 120								# Seconds of silence from Ollama before a request is abandoned
 OLLAMA_NUM_BATCH = 256								# One value for every chat() call, so Ollama never sees differing runner options
 OLLAMA_KEEP_ALIVE = 14400							# Seconds the model stays loaded between requests (4h)
-UNLOAD_ON_EXIT = False								# True frees the model's memory when ORAC closes; False keeps it loaded, so a restart is ready in seconds
+UNLOAD_ON_EXIT = True								# Free the model's memory when ORAC closes. False keeps it loaded, so a restart is ready in seconds
 
 ollama_client = Client(timeout=OLLAMA_TIMEOUT)
 
@@ -250,6 +250,11 @@ def log_error(msg):
             f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
     except Exception:
         pass
+
+def debug_log(msg):
+    """ Diagnostics for ollama_debug.log (timings, warm-ups), written only in debug mode: DEBUG_START, or
+        Option+D. Errors always go through log_error. """
+    if state.debug: log_error(msg)
 
 _PHRASE_RE_CACHE = {}
 
@@ -437,7 +442,7 @@ class OracState:
         self.term_cols = TERMINAL_COLS
         self.term_rows = TERMINAL_ROWS
         self.debug = DEBUG_START
-        self.debug_col = DIM
+        self.debug_col = RESET if DEBUG_START else DIM
         self.sounds = {}              
         for name, path in {
             "s_ready": SOUND_READY,
@@ -1143,7 +1148,7 @@ class MacTTS:
             elif seen_speaking or time.time() - started > 1.5:
                 break
             time.sleep(0.05)
-        log_error(f"Voice warm-up: {time.time() - started:.1f}s")
+        debug_log(f"Voice warm-up: {time.time() - started:.1f}s")
 
     def _speak_and_wait(self, utterance):
         """ Speaks one AVSpeechUtterance and blocks until it's done, honoring interruption.
@@ -2349,7 +2354,7 @@ def preload_model():
             keep_alive=OLLAMA_KEEP_ALIVE,
             options={**LLM_RUNNER_OPTIONS, 'num_predict': 1}
         )
-        log_error(f"Model preload ({OLLAMA_MODEL}): {time.time() - t_start:.1f}s; {model_timings(response)}")
+        debug_log(f"Model preload ({OLLAMA_MODEL}): {time.time() - t_start:.1f}s; {model_timings(response)}")
         debug_line(f"[DEBUG] Model preloaded in {time.time() - t_start:.2f}s")
     except Exception as e:
         log_error(f"preload_model: {type(e).__name__}: {e}")
@@ -2704,7 +2709,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                     break          
     
         if first_chunk:
-            log_error(f"Reply: stopped before the first token ({time.time() - t_llm_start:.1f}s)")
+            debug_log(f"Reply: stopped before the first token ({time.time() - t_llm_start:.1f}s)")
         else:
             ttft = t_llm_first_token - t_llm_start
             line = f"Reply: first token after {ttft:.2f}s"
@@ -2715,7 +2720,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 line += f"; {model_timings(final)}"
             else:
                 line += "; no final stats from the model (the reply was stopped early)"
-            log_error(line)
+            debug_log(line)
         if epoch_id is not None and state.stream_epoch not in (epoch_id, 0.0):
             return      # Superseded by a newer request, which now owns the teletype, TTS queue and history
 
@@ -3026,7 +3031,7 @@ def warm_up_whisper():
     started = time.time()
     try:
         transcribe(np.zeros(16000, dtype=np.float32))
-        log_error(f"Whisper warm-up: {time.time() - started:.1f}s")
+        debug_log(f"Whisper warm-up: {time.time() - started:.1f}s")
     except Exception as e:
         log_error(f"Whisper warm-up: {type(e).__name__}: {e}")
 
