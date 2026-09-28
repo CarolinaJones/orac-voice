@@ -30,6 +30,9 @@ A performance, reliability and tidy-up release. You don't need to change any set
   to first token (and how much of it was spent waiting for the model), load time, prompt reading
   time and generation. Replies that are stopped early are logged too. Errors are logged either way.
 - **Fixed:** with `DEBUG_START = True`, the header's stats line started dimmed, as if debug were off.
+- **What Whisper heard, in `ollama_debug.log`** (debug mode): each transcription with Whisper's
+  confidence (no-speech probability, log-probability), including those dropped as likely
+  hallucinations, such as a short "Thank you".
 - **Whisper warm-up at start-up.** Whisper loaded its model on the first thing said (3.7 s instead of
   under a second); one second of silence is now transcribed while ORAC boots.
 - **Gemma 3 stop strings removed.** Gemma 4 uses different turn markers. A stop list sent with the
@@ -44,6 +47,10 @@ A performance, reliability and tidy-up release. You don't need to change any set
 - **`SSML_EMPHASIS = ""`** now leaves out the `<emphasis>` tag.
 - **App Nap turned off.** macOS no longer puts ORAC into App Nap or coalesces its timers between
   turns.
+- **New `SENTENCES_PER_UTTERANCE` setting** (default 1). After the first sentence, ORAC used to wait
+  for two complete sentences before speaking again, which left up to 2 s of silence after a short
+  opening sentence. The model writes about three times faster than ORAC speaks, so sending each
+  sentence as soon as it's written keeps the voice fed. 2 restores the pairs.
 - **Fixed:** "I'm" and "I'd" were spoken as "I, m" and "I, d" because of the pause added after
   "I".
 - **Voice warm-up at start-up (`VOICE_WARMUP`, on by default).** One line is spoken silently while
@@ -63,7 +70,8 @@ A performance, reliability and tidy-up release. You don't need to change any set
     volume, emphasis and break, and the utterance's rate and pitch multiplier), each against the
     unchanged sentence rendered just before it, and reports which ones change the audio. It also
     tests whether a phrase said first (the old warm-up line) or a sentence at another speed changes
-    the next sentence, and compares the voice's very first render with a later one.
+    the next sentence, whether two sentences in one utterance sound different from each on its own,
+    and compares the voice's very first render with a later one.
   - `--say --text "..."` speaks one sentence with ORAC's settings, to try wording by ear.
 - **Measured with the probe:** a Personal Voice ignores SSML pitch, SSML emphasis and the pitch
   multiplier (the renders are byte-identical), and obeys rate, volume and pauses. The settings'

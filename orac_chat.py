@@ -94,6 +94,7 @@ SSML_VOLUME = "loud"       							# silent, x-soft, soft, medium, loud, x-loud
 SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to omit the tag (a Personal Voice ignores this too)
 
 MIN_FIRST_UTTERANCE_WORDS = 4						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
+SENTENCES_PER_UTTERANCE = 1							# After the first: 1 = speak each sentence as soon as it's written; 2 = wait for pairs (up to 2 s of silence)
 SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
 VOICE_WARMUP = True									# Speak one line silently at start-up, so the voice's own start-up stall happens during boot, not in the first reply
 
@@ -2688,13 +2689,14 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 matches = list(SPLIT_REGEX.finditer(sentence_buffer))
                 
                 # Send the first sentence immediately (for low latency), unless it is a very short opener, which
-                # waits for the next one. After that, wait for at least 2 sentences for emotional context.
+                # waits for the next one. After that, send SENTENCES_PER_UTTERANCE sentences at a time: the model
+                # writes about three times faster than ORAC speaks, so single sentences keep the voice fed.
                 if not matches:
                     ready = False
                 elif not sent_first_sentence:
                     ready = len(matches) >= 2 or len(sentence_buffer[:matches[-1].end()].split()) >= MIN_FIRST_UTTERANCE_WORDS
                 else:
-                    ready = len(matches) >= 2
+                    ready = len(matches) >= max(1, SENTENCES_PER_UTTERANCE)
                 if ready:
                     # Grab everything up to the end of the last matched sentence.
                     split_point = matches[-1].end()
@@ -3025,6 +3027,15 @@ def transcribe(audio):
             no_speech_threshold=0.6,
         )
 
+def whisper_confidence(result):
+    """ Whisper's own confidence in a transcription: the highest no-speech probability and the lowest
+        average log-probability of its segments. """
+    segments = result.get("segments") or []
+    if not segments:
+        return "no segments"
+    return (f"no-speech {max(seg.get('no_speech_prob', 0.0) for seg in segments):.2f}, "
+            f"logprob {min(seg.get('avg_logprob', 0.0) for seg in segments):.2f}")
+
 def warm_up_whisper():
     """ Whisper loads its model on first use (3.7 s for the first thing said, under a second after), so
         one second of silence is transcribed while ORAC boots. """
@@ -3201,6 +3212,7 @@ def run_local_bot():
                         result = transcribe(audio_float32)
                         
                         user_text = result['text'].strip()
+                        heard = f"Heard {user_text!r} ({whisper_confidence(result)})"
 
                         threading.Timer(0.4, lambda: mx.clear_cache()).start() # Seems to work better with the timer!
                         
@@ -3214,7 +3226,10 @@ def run_local_bot():
                         del audio_float32
                         del result 
 
-                        if len(user_text) < 2 or is_hallucination(user_text): continue
+                        if len(user_text) < 2 or is_hallucination(user_text):
+                            if user_text: debug_log(f"{heard}: ignored as a likely Whisper hallucination")
+                            continue
+                        debug_log(heard)
                         if "temporal marker has been reached" in user_text.lower(): continue
 
                         clean_text = user_text.lower().strip("'.,! ")

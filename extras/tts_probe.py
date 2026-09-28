@@ -39,7 +39,8 @@ emphasis, and the utterance's own rate and pitchMultiplier), measures each rende
 loudness, and reports which settings change the audio at all. The voice renders the same input to the
 same bytes, so a render identical to the baseline means that setting is ignored. It then checks
 whether a phrase said first (ORAC's old warm-up line: rendered, spoken silently, or as a silent
-lead-in in the same utterance) changes how the sentence is spoken. About a minute; no model needed.
+lead-in in the same utterance) changes how the sentence is spoken, and whether two sentences spoken in
+one utterance sound different from each on its own. About a minute; no model needed.
 
 The settings, round notes and table are also saved to a text file next to this script, named
 tts_probe_<date>_<time>_<model>.txt (--log FILE to save it somewhere else).
@@ -751,6 +752,74 @@ def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
 PRIMING_PHRASE = "I find your discourse irritatingly tedious."      # ORAC's old warm-up line
 
 
+def sound_span(x, start=0):
+    """First and last sample above -40 dBFS, from `start` on (numpy array)."""
+    import numpy as np
+    loud = np.nonzero(np.abs(x[start:]) > 0.01)[0]
+    return (start + int(loud[0]), start + int(loud[-1]) + 1) if len(loud) else (None, None)
+
+
+def compare_sound(a, b, rate):
+    """(description, changed) for two stretches of sound aligned at their onsets: identical samples, the same
+    delivery with tiny sample differences, or a changed delivery (length, pitch, range or level)."""
+    import numpy as np
+    n = min(len(a), len(b))
+    if abs(len(a) - len(b)) <= int(0.01 * rate) and float(np.max(np.abs(a[:n] - b[:n]))) < 1e-4:
+        return "identical", False
+    x, y = analyse_samples(a, rate), analyse_samples(b, rate)
+    length = y["length"] - x["length"]
+    pitch = 12 * math.log2(y["pitch"] / x["pitch"]) if x["pitch"] and y["pitch"] else 0.0
+    spread = y["range"] - x["range"] if x["range"] is not None and y["range"] is not None else 0.0
+    level = y["level"] - x["level"] if x["level"] is not None and y["level"] is not None else 0.0
+    notes = f"length {length:+.2f}s, pitch {pitch:+.1f} st, range {spread:+.1f} st, level {level:+.1f} dB"
+    changed = abs(length) >= 0.03 * x["length"] or abs(pitch) >= 0.5 or abs(spread) >= 1.0 or abs(level) >= 1.0
+    return f"{'CHANGED' if changed else 'slightly different samples, same delivery'} ({notes})", changed
+
+
+def batching_check(synth, voice, text, prosody, emphasis, out_dir, report):
+    """Does a sentence sound different when it's spoken in one utterance with the next (as ORAC's pairs
+    were) than on its own?"""
+    split = re.search(r"[.!?]\s+", text)
+    if not split:
+        return
+    first, second = text[:split.end()].strip(), text[split.end():].strip()
+    print("  batching: each sentence alone, then both in one utterance", flush=True)
+    renders = [render_to(synth, make_utterance(build_ssml(part, prosody, emphasis), voice, None),
+                         os.path.join(out_dir, name))
+               for part, name in ((first, "b1_first_alone.caf"), (second, "b2_second_alone.caf"),
+                                  (text, "b3_both_together.caf"))]
+    report()
+    report("Batching check: each sentence spoken alone vs both in one utterance")
+    if any(r is None for r in renders):
+        report("  The voice produced no audio for part of the batching check.")
+        return
+    rate, layout = renders[0][0], renders[0][1]
+    a, b, ab = (samples_of(layout, r[2]) for r in renders)
+    if a is None:
+        report("  needs numpy to compare")
+        return
+    pad = int(0.01 * rate)
+    a0, a1 = sound_span(a)
+    b0, b1 = sound_span(b)
+    t0, _ = sound_span(ab)
+    first_together = ab[t0:t0 + (a1 - a0)]
+    second_start, _ = sound_span(ab, t0 + (a1 - a0) + int(0.05 * rate))
+    if None in (a0, b0, t0, second_start):
+        report("  couldn't find both sentences in the renders")
+        return
+    lead = min(pad, b0, second_start)          # The same lead-up before both onsets
+    second_together = ab[second_start - lead:second_start + (b1 - b0)]
+    results = [compare_sound(a[a0:a1], first_together, rate),
+               compare_sound(b[b0 - lead:b1], second_together, rate)]
+    report(f"  first sentence, together vs alone:   {results[0][0]}")
+    report(f"  second sentence, together vs alone:  {results[1][0]}")
+    report(f"  pause between them when together:    {(second_start - (t0 + a1 - a0)) / rate:.2f}s")
+    if not any(changed for _, changed in results):
+        report("Speaking two sentences together doesn't change how either sounds; it only delays the second.")
+    else:
+        report("Speaking two sentences together changes their delivery: compare b3 with b1 and b2 by ear.")
+
+
 def carry_over_check(synth, voice, text, prosody, emphasis, out_dir, report):
     """Does a sentence spoken at another speed change the next one? Once for a sentence that doesn't
     set its own rate, once for ORAC's SSML (which always does)."""
@@ -988,6 +1057,7 @@ def main():
             if results:
                 context_check(synth, times, voice, spoken, prosody, emphasis, results["ORAC's SSML"]["raw"],
                               out_dir, report)
+                batching_check(synth, voice, spoken, prosody, emphasis, out_dir, report)
         except KeyboardInterrupt:
             report("\nStopped early (Ctrl+C).")
         report()
