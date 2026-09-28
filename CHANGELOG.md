@@ -33,8 +33,15 @@ A performance, reliability and tidy-up release. You don't need to change any set
   turns.
 - **Fixed:** "I'm" and "I'd" were spoken as "I, m" and "I, d" because of the pause added after
   "I".
+- **Exact voice name wins.** With several Personal Voices, `VOICE = "ORAC Personal Voice"` could
+  pick "ORAC Personal Voice 2" if macOS listed that one first, and no `VOICE` value could avoid it.
+  A voice with exactly the `VOICE` name is now chosen first.
 - **New `extras/tts_probe.py`.** It times the voice cold and warm, spoken live and rendered to a
   file, with or without an LLM reply streaming. Use it to track down the flat voice.
+  - It tests ORAC's own voice and settings, read from `orac_chat.py`. Choose another voice with
+    `VOICE` at the top of the probe, `--voice "name"` or `--menu`.
+  - After each round it asks how the speech sounded, and saves the settings and results table to
+    a text file next to the script.
 
 ### Commands and archive
 - **Whole-utterance commands.** Power-off, reboot, networking and "clear history" now only run
@@ -85,6 +92,11 @@ A performance, reliability and tidy-up release. You don't need to change any set
   (`# H A R D W A R E  S E T T I N G S #` style), with settings first. Title boxes in every file
   now use spaces instead of tabs, so they line up in any editor and on GitHub.
 
+### Documentation
+- **README** updated for the `AVSpeechSynthesizer` voice, the current settings and commands, and
+  the model the code uses by default (`gemma4:12b`).
+- **New `ORAC-VOICE_User_Manual.md`:** every voice command, keyboard shortcut and mode.
+
 ---
 
 ## v1.9.3 (2026-09-27)
@@ -118,9 +130,16 @@ Local development since v1.6.5, first pushed with v1.9.4.
   Power-off and reboot use `sudo -n`, so they fail at once if the sudoers entry is missing
   instead of waiting for a password.
 
+### Commands
+- **"Exit interface"** now ends the session. "Shut down" and "deactivate" did before, and a stray
+  "deactivate" could end it by accident.
+- **"Re set" removed** from the memory purge commands ("clear history" and "new subject" remain).
+- **Memory recall phrases** must now be about the conversation, e.g. "summarise our conversation".
+  Bare "summarise", "recap" and "remind me" turned lore questions into recaps.
+
 ### Modes
-- **`HEADLESS_MODE`** runs ORAC without a monitor: no terminal UI, and Ctrl+C always exits and
-  saves the transcript.
+- **`HEADLESS_MODE`** runs ORAC without a monitor: no terminal UI, and exiting (by voice or
+  Ctrl+C) saves the transcript automatically, since the save prompt can't be seen.
 - **`TEXT_ONLY_MODE`** (typed input only) is now a user setting. ORAC still offers it at startup
   if the Whisper model is missing.
 - **`WAFFLE_MODE`** lets ORAC talk at length about his favourite topics.
