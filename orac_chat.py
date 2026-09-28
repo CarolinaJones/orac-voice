@@ -64,6 +64,7 @@ DEBUG_START = 1										# Start with Debug Mode enabled (1 = Yes  0 = No)
 VOICE = "" 			# Leave blank to use the "System Voice" - This allows for SIRI/Personal Voices
 voice_pitch = 72 	# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 182		# Synth Speech Rate
+SPEAK_AFTER_GENERATION = False	# Experiment: speak only once the LLM has finished (isolates GPU contention)
 
 TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder
 TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added)
@@ -333,6 +334,15 @@ class OracState:
                 )
 
 state = OracState()
+
+# Opt out of App Nap and timer coalescing while ORAC idles between turns (the "aggressive power
+# management" feel); idle system sleep is still allowed. The token must live as long as the process.
+try:
+    from Foundation import NSProcessInfo, NSActivityUserInitiatedAllowingIdleSystemSleep, NSActivityLatencyCritical
+    _process_activity = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
+        NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical, "ORAC real-time voice")
+except Exception:
+    _process_activity = None
 
 try:
     old_term_settings = termios.tcgetattr(sys.stdin.fileno())
@@ -1581,9 +1591,13 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
         else:
             teletype.is_typing.set()
 
+    held_speech = []    # Only used when SPEAK_AFTER_GENERATION is on
+
     def speak(sentence):
         clean_speech = sanitize_for_tts(sentence)
-        if HAS_ALNUM.search(clean_speech): tts.say(clean_speech)
+        if not HAS_ALNUM.search(clean_speech): return
+        if SPEAK_AFTER_GENERATION: held_speech.append(clean_speech)
+        else: tts.say(clean_speech)
 
     translated_prompt = translate_user_prompt(prompt)
 
@@ -1794,6 +1808,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 begin_transmission()
             if sentence_buffer.strip():
                 speak(sentence_buffer.strip())
+            for sentence in held_speech:
+                tts.say(sentence)
 
             record_reply("".join(response_chunks).strip())
 
