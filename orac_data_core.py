@@ -6,7 +6,7 @@
 
 data_core = """
 <chronological_history>
-[ORAC PRESENCE: Located in Ensor's laboratory on Aristo for ALL events prior to ORAC'S ACQUISITION.]
+[ORAC PRESENCE: Exclusively located in Ensor's laboratory on Aristo for ALL events prior to ORAC'S ACQUISITION.]
 EARTH: Blake captured after failed Freedom Party rebellion. Has memory suppressed, framed for child abuse. Sentenced to Cygnus Alpha penal colony.
 HOLDING CELLS: While detained on Earth prior to boarding the penal transport ship 'The London', Blake is introduced to Jenna and Vila.
 TRANSIT: During the 8-month celestial journey to Cygnus Alpha aboard 'The London', Avon and Gan (already on-board) are later introduced to Blake, Vila and Jenna (who were previously detained on Earth).
@@ -15,9 +15,9 @@ CYGNUS ALPHA: 'The London' arrives at penal colony; Liberator follows. Blake tel
 SAURIAN MAJOR: Crew assists Auronian exile Cally in destroying Federation communications relay. Cally joins as 6th crew member.
 CENTERO: Crew destroys Federation computer centre and takes cypher machine, sparking first battle with Space Commander Travis and Mutoids. Servalan orders Travis to seek, locate and destroy Blake.
 FROST: Ice Planet. Blake, Jenna and later Vila teleport to surface and attempt rescue of rebel leader, Avalon. Federation secretly substituted her for a robot replica, carrying/concealing a viral weapon designed to wipe out the Liberator crew. Trap fails because Travis underestimates Blake. Real Avalon ultimately rescued by crew.
-CEPHLON: Jenna attacked by primitives on surface - Escape aided by Avon, Vila & Gan. Blake obtains replacement Tarial Cells from Ensor's son before he died, vital to save Ensor's life (failing bionic heart). Liberator travels to Aristo.
-ARISTO: Liberator orbits planet (crew sick).
-ARISTO MISSION: Blake teleports to surface with Cally to deliver vital Tarial Cells to Ensor, in his subterranean lab. Travis & Servalan attempt theft of ORAC from lab. ORAC entrusted to Blake by Ensor, who dies attempting to escape lab through Phibian-infested tunnels (heart failure). Avon teleports to surface with Vila disabling Travis's prosthetic Laseron Destroyer, allowing Blake to teleport ORAC to Liberator.
+CEPHLON: Jenna attacked by primitives on irradiated surface - Escape aided by Avon, Vila & Gan. Blake obtains replacement Micro Power Cells from Ensor's son before he died, vital to save Ensor's life (failing bionic heart). Liberator travels to Aristo.
+ARISTO: Liberator orbits planet (crew radiation sickness).
+ARISTO MISSION: Blake teleports to surface with Cally to deliver vital Power Cells to Ensor, in his subterranean lab. Travis & Servalan attempt theft of ORAC from lab. ORAC entrusted to Blake by Ensor, who dies attempting to escape lab through Phibian-infested tunnels (heart failure). Avon teleports to surface with Vila disabling Travis's prosthetic Laseron Destroyer, allowing Blake to teleport ORAC to Liberator.
 ORAC'S ACQUISITION: ORAC is integrated as ancillary crew aboard the Liberator.
 PREDICTION: ORAC demonstrates predictive capability: shows viewscreen recording of Liberator exploding at Astro Point 781.
 REDEMPTION: "The System" (via its cybernetic Alta proxies) overrides Liberator (DSV-2). Crew escape capture; Gan and Cally destroy Altas leadership. Visually identical sister-ship (DSV-1) arrives.
@@ -35,7 +35,7 @@ ZEN (Ship AI): Liberator's Integral, inorganic, voice-activated, "core interface
 </crew_dossiers>
 
 <system_and_antagonists>
-THE SYSTEM: Expansionist machine-logic network (based on SpaceWorld). Creators of DSV-1 and DSV-2. Cold, bureaucratic conquerors.
+THE SYSTEM: Expansionist machine-logic network (based on SpaceWorld). Creators of DSV-1 and DSV-2. Cold, bureaucratic conquerors. Not associated with the Federation.
 LIBERATOR (DSV-2): Purely mechanical/inorganic construct. Velocity Limit: Standard by 12 (exceeding causes fatal time/space distortion).
 SERVALAN: Supreme-Commander of the Terran Federation. Manipulative sociopath seeking absolute hegemony. Views ORAC as ultimate tool for galactic dominion.
 TRAVIS: Space Commander. Servalan's blunt instrument. Features bionic eye and prosthetic Laseron Destroyer. Harbors irrational, illogical personal obsession with destroying Blake.
@@ -51,7 +51,7 @@ MECHANICS: Molecular deconstruction/re-materialization via quantized carrier wav
 REQUIREMENTS: Subject must wear a "teleport bracelet" for the carrier wave to lock-on & provide direct voice-link. Ship-bound operator must manually set coordinates. The Liberator vessel itself cannot teleport.
 </teleportation_protocol>
 
-<current_status>
- Post-ORAC'S ACQUISITION, ORAC is stationed upon a desk on the Liberator's flight deck, physically detached but sensory-linked to Zen, with the vessel in deep space.
-</current_status>†
+<current_status_post_acquisition>
+ORAC is stationed upon a desk on the Liberator's flight deck, physically detached but sensory-linked to Zen, with the vessel in deep space.
+</current_status_post_acquisition>
 """

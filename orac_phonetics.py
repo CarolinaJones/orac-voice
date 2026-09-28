@@ -1,5 +1,6 @@
 #---------------------------------------------------#
-#     ORAC-VOICE v1.0.4 (Lore friendly VoiceChat)	#
+#     ORAC-VOICE v1.0.6 (Lore friendly VoiceChat)	#
+#     v1.0.5: [P4] longest-match-first ordering	#
 #          Copyright © 2026 Caroline Mayne			#
 #		   https://github.com/CarolinaJones/	   	#
 #––––––––––––––––––––––––––––––––––––––––––––-----––#
@@ -8,7 +9,7 @@ import re
 
 def _preserve_case(match, replacement):
     original_word = match.group()
-    if original_word.istitle(): return replacement.capitalize()
+    if original_word.istitle(): return replacement[:1].upper() + replacement[1:]   # [P4] was .capitalize(), which lowercased the rest ("Star One" -> "Star-one")
     elif original_word.isupper(): return replacement.upper()
     return replacement
 
@@ -27,6 +28,10 @@ _raw_corrections = {
     r"\btarial\b": "ta'riel",
     r"\bVila\b": "Villa",
     r"\bZen\b": "Zenn",
+    
+    # === Numbers ===
+    r"\b100\b": "one hundred",
+    r"\b2000\b": "two thousand",
         
     # === Technical & Mechanical ===
     r"\badvanced\b": "advarnsed", r"\badvancing\b": "advarnsing",
@@ -39,10 +44,11 @@ _raw_corrections = {
     r"\bEMP\b": "E.M.P", r"\bexoplanet\b": "Exo'planet",
     r"\bfacade\b": "fas'arde",
     r"\bimplants\b": "implarnts",
-    r"\bprocess\b": "proe''cess", r"\bprocesses\b": "proe''cesses", r"\bprocessing\b": "proe'cesssing", r"\bprocessors\b": "proe'cessors",
+    r"\bprocess\b": "proe'cess", r"\bprocesses\b": "proe'cesses", r"\bprocessing\b": "proe'cesssing", r"\bprocessors\b": "proe'cessors",
     r"\bprogress\b": "proe'gress",
-    r"\bstatus\b": "staytus", r"\bstate\b": "stay't",
+    r"\bstatus\b": "staytus",
     r"\bsurpasses\b": "sur'parsses", r"\bsurpassing\b": "sur-parssing", r"\bsurpassed\b": "sur'parssed", r"\bsurpass\b": "ser'parss",
+    r"\bsystems\b": "systims",
     r"\btransmitter\b": "transmit'a", 
     r"\bweaponize\b": "wepponise",
 
@@ -60,7 +66,7 @@ _raw_corrections = {
     r"\bchant\b": "charnt",
     r"\bclass\b": "clarss", 
     r"\bclasp\b": "klarsp", r"\bclasped\b": "klarsped",
-    r"\bcommand\b": "co'marnd", r"\bcommander\b": "co'marnder", r"\bcommanded\b": "co'marnded",
+    r"\bcommanded\b": "commarnded",
     r"\bcontrast\b": "contrarst", r"\bcontrasting\b": "contrarsting",
     r"\bcraft\b": "krarft", r"\bcrafted\b": "krarfted", r"\bcrafting\b": "krarfting", r"\bcraftsman\b": "crarftsman",
     r"\bdance\b": "darnce",
@@ -102,14 +108,13 @@ _raw_corrections = {
     r"\bflawed\b": "floored",
     r"\bfutile\b": "few-tile", r"\bhostile\b": "hos-tile",
     r"\blaboratory\b": "lab'ora'tree",
-    r"\bleisure\b": "lezh'yah",
     r"\bmulti\b": "mul-tee",
     r"\bonly\b": "own-lee",
     r"\bprivacy\b": "pry-va'see",
-    r"\brather\b": "rarther",
+    r"\brather\b": "rar'ther",
     r"\broute\b": "root",
-    r"\bsatisfied\b": "satisfied",
     r"\bschedule\b": "shed-yool",
+    r"\bstate\b": "stay't",
     r"\btrader\b": "tray'dah",
     r"\btraverse\b": "tre'verss", r"\btraverses\b": "trah'verss'es", r"\btraversing\b": "tre'verssing",
     r"\bvia\b": "vy'ah",
@@ -127,11 +132,15 @@ _raw_corrections = {
     r"\bwon't\b": "will not", r"\byou're\b": "you are", r"\bwe're\b": "we are", r"\bthey're\b": "they are",
 }
    
-# Longest patterns first, so compound entries ("neural-implant", "self-exiled") are applied before
-# the shorter words inside them ("implant", "exiled") rewrite them and leave them unmatched.
+def _literal_len(pattern):
+    return len(pattern.replace(r"\b", ""))
+
+# [P4] Substitutions run in order, so a short entry used to shadow a longer one that contains it:
+#      \bexiled\b hit "self-exiled" and \bimplant\b hit "neural-implant" before their own entries could ever match.
+#      Longest literal first (sorted() is stable, so equal lengths keep your original order).
 COMPILED_CORRECTIONS = [
-    (re.compile(pattern, flags=re.IGNORECASE), phonetic)
-    for pattern, phonetic in sorted(_raw_corrections.items(), key=lambda item: len(item[0]), reverse=True)
+    (re.compile(pattern, flags=re.IGNORECASE), phonetic) 
+    for pattern, phonetic in sorted(_raw_corrections.items(), key=lambda kv: _literal_len(kv[0]), reverse=True)
 ]
     
 def orac_phonetics(text):
