@@ -57,8 +57,14 @@ straight after another sentence spoken aloud (B), or straight after a silent war
 3 of each (--rounds), in shuffled order, and A and C sound the same until the sentence starts, so you can
 rate them blind. It compares the takes' length and, from the voice's own word timings, when each word
 started; it also records every take through the microphone ORAC listens with (another with --mic N, see
---list-mics) to compare pitch, pitch range and rhythm. Stay quiet while it runs (about five minutes). The
-takes are saved as .wav files.
+--list-mics) to compare pitch, pitch range, and the sound itself: a null test (the take lined up with the
+first one to a fraction of a sample, level-matched and subtracted) and octave-band tone balance. Stay quiet
+while it runs (about five minutes). The takes are saved as 24-bit .wav files at the input's own rate.
+
+For an exact comparison, capture the sound digitally rather than through the air: install BlackHole
+(brew install blackhole-2ch), create a Multi-Output Device in Audio MIDI Setup with your speaker and
+BlackHole 2ch, choose it as the Mac's output, and record from BlackHole with --mic N (see --list-mics).
+Identical sound then cancels far below -60 dB. Set the output back afterwards.
 
 The settings, round notes and table are also saved to a text file next to this script, named
 tts_probe_<date>_<time>_<model>.txt (--log FILE to save it somewhere else).
@@ -776,7 +782,7 @@ def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
         report(f"  {control:16} {'IGNORED' if ignored else 'obeyed':8} ({detail})")
     report()
     report("length = the whole render, speech = first to last sound, pitch = median voice pitch,")
-    report("range = pitch variation in semitones (10th to 90th percentile; lower = flatter), level = loudness")
+    report("range = pitch variation in semitones (10th to 90th percentile; lower = less variation), level = loudness")
     return results
 
 
@@ -846,9 +852,10 @@ def batching_check(synth, voice, text, prosody, emphasis, out_dir, report):
     report(f"  second sentence, together vs alone:  {results[1][0]}")
     report(f"  pause between them when together:    {(second_start - (t0 + a1 - a0)) / rate:.2f}s")
     if not any(changed for _, changed in results):
-        report("Speaking two sentences together doesn't change how either sounds; it only delays the second.")
+        report("In the renders, each sentence spoken in one utterance with the other is identical to its render")
+        report("alone; the second only starts later.")
     else:
-        report("Speaking two sentences together changes their delivery: compare b3 with b1 and b2 by ear.")
+        report("In the renders, speaking the two sentences in one utterance changes them: compare b3 with b1 and b2.")
 
 
 def carry_over_check(synth, voice, text, prosody, emphasis, out_dir, report):
@@ -875,13 +882,12 @@ def carry_over_check(synth, voice, text, prosody, emphasis, out_dir, report):
             changed.append(number)
         report(f"  {label:30} {verdict}")
     if changed == [1]:
-        report("The voice carries its speed over to a sentence that doesn't set one; ORAC's sentences set their")
-        report("own rate, so the one before can't affect them.")
+        report("In the renders, a sentence that doesn't set its own rate took on the fast sentence's speed; with")
+        report("ORAC's SSML, which sets the rate, it rendered identically before and after.")
     elif 2 in changed:
-        report("Even a sentence with its own rate came out differently after the fast one: ORAC's speech can")
-        report("depend on what was said before it.")
+        report("In the renders, even a sentence with its own rate came out differently after the fast one.")
     else:
-        report("No carry-over: the sentence before doesn't affect the next one.")
+        report("In the renders, the sentence came out identical before and after the fast one.")
 
 
 def context_check(synth, times, voice, text, prosody, emphasis, baseline_raw, out_dir, report):
@@ -955,16 +961,16 @@ def context_check(synth, times, voice, text, prosody, emphasis, baseline_raw, ou
                 report(f"  {label:50} {silence:.2f}s of silence, then the sentence {change} ({notes})")
     report()
     if all(same_after):
-        report("A separate phrase before the sentence, rendered or spoken, doesn't change it at all: the voice")
-        report("carries nothing from one utterance to the next, so a warm-up phrase can't set its mood.")
+        report("Rendered after the phrase (rendered, spoken aloud or spoken silently first), the sentence is")
+        report("byte-for-byte identical to its render alone.")
     else:
-        report("A phrase said before the sentence DOES change it: the voice carries context between utterances.")
-        report("Compare c2-c4 with the ORAC's SSML render by ear.")
+        report("Rendered after the phrase, the sentence DIFFERS from its render alone: compare c2-c4 with the")
+        report("ORAC's SSML render.")
     if lead_verdict is True:
-        report("Context inside the same utterance changes the sentence: compare c5 (after its silence) with the")
-        report("ORAC's SSML render by ear.")
+        report("As a silent lead-in in the same utterance, the phrase changes the sentence's render: compare c5")
+        report("(after its silence) with the ORAC's SSML render.")
     elif lead_verdict is False:
-        report("Context inside the same utterance doesn't change it either.")
+        report("As a silent lead-in in the same utterance, the phrase leaves the sentence's render the same.")
 
 
 SAID_LINE = re.compile(r"^(\S+ \S+) Said (.+) \((-?\d+\.\d)s; (?:first since start-up|(-?\d+\.\d)s quiet before)(; interrupted)?\)$")
@@ -1060,15 +1066,12 @@ def first_vs_rest(firsts, rest, report):
         report("  Too few replies of two sentences or more to compare their first sentences with the rest (3 are needed).")
         return
     gap = later["range"] - first["range"]
-    if gap >= 1.5:
-        report(f"  The first sentences are flatter ({gap:.1f} st less range) even rendered on their own with the")
-        report("  model idle: the flatness is in their words.")
-    elif gap <= -1.5:
-        report(f"  The first sentences are livelier than the rest ({-gap:.1f} st more range).")
+    if abs(gap) >= 1.5:
+        report(f"  Rendered on their own with the model idle, the first sentences have {abs(gap):.1f} st "
+               f"{'less' if gap > 0 else 'more'} pitch range than the rest.")
     else:
-        report("  Rendered on their own, the first sentences are about as lively as the rest. If they sounded")
-        report("  flatter in ORAC, replay them with --say: if they sound fine now, how ORAC spoke them made the")
-        report("  difference, not the words.")
+        report("  Rendered on their own with the model idle, the first sentences have about the same pitch range")
+        report("  as the rest (within 1.5 st).")
 
 
 def log_check(synth, times, voice, prosody, emphasis, runs, out_dir, report, say):
@@ -1076,7 +1079,7 @@ def log_check(synth, times, voice, prosody, emphasis, runs, out_dir, report, say
     report()
     report("What ORAC said, each utterance rendered again here with the model idle")
     report("spoke = how long ORAC took to say it   render = length of the same words rendered now")
-    report("words/s = speaking rate   pitch = median voice pitch   range = pitch variation (lower = flatter)")
+    report("words/s = speaking rate   pitch = median voice pitch   range = pitch variation (lower = less variation)")
     all_firsts, all_rest = [], []
     for run_number, run in enumerate(runs, 1):
         firsts, rest = [], []
@@ -1131,9 +1134,9 @@ HEARD_LEVEL = 0.003         # About -50 dBFS: quieter than this, the microphone 
 
 
 class Microphone:
-    """Records an input at 16 kHz in the background (by default the one ORAC listens with), reading it the
-    way ORAC's speech recognition does."""
-    RATE, CHUNK = 16000, 1024
+    """Records an input in the background at its own sample rate (by default the input ORAC listens with),
+    reading it the way ORAC's speech recognition does."""
+    CHUNK = 1024
 
     def __init__(self, device=None):
         import pyaudio
@@ -1142,7 +1145,8 @@ class Microphone:
             info = (self._pa.get_device_info_by_index(device) if device is not None
                     else self._pa.get_default_input_device_info())
             self.name = str(info.get("name", "?"))
-            self._stream = self._pa.open(format=pyaudio.paInt16, channels=1, rate=self.RATE, input=True,
+            self.rate = int(info.get("defaultSampleRate") or 16000)
+            self._stream = self._pa.open(format=pyaudio.paFloat32, channels=1, rate=self.rate, input=True,
                                          input_device_index=device, frames_per_buffer=self.CHUNK)
         except Exception:
             self._pa.terminate()
@@ -1163,18 +1167,20 @@ class Microphone:
     def between(self, t0, t1):
         """What the microphone heard from t0 to t1 (perf_counter times), as floats."""
         import numpy as np
-        span = self.CHUNK / self.RATE
+        span = self.CHUNK / self.rate
         data = b"".join(d for t, d in list(self.chunks) if t >= t0 and t - span <= t1)
-        return np.frombuffer(data, dtype="<i2").astype(np.float64) / 32768.0
+        return np.frombuffer(data, dtype="<f4").astype(np.float64)
 
     def save(self, x, path):
+        """A 24-bit WAV at the input's own rate."""
         import wave
         import numpy as np
+        whole = (np.clip(x, -1.0, 1.0 - 2.0 ** -23) * 2 ** 23).astype("<i4")
         with wave.open(path, "wb") as w:
             w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(self.RATE)
-            w.writeframes((np.clip(x, -1.0, 1.0) * 32767).astype("<i2").tobytes())
+            w.setsampwidth(3)
+            w.setframerate(self.rate)
+            w.writeframes(whole.view(np.uint8).reshape(-1, 4)[:, :3].tobytes())
 
     def close(self):
         self._running = False
@@ -1208,43 +1214,75 @@ def list_mics():
         pa.terminate()
 
 
-def envelope(x, rate):
-    """Loudness in 10 ms steps, in dB below the loudest step, trimmed to where there's sound."""
+def speech_part(x, rate):
+    """The part of a recording with the voice in it: from the first to the last sample within 40 dB of its peak
+    level, plus 50 ms either side."""
     import numpy as np
-    n = rate // 100
-    frames = len(x) // n
-    if frames == 0:
-        return np.zeros(0)
-    rms = np.sqrt(np.mean(x[:frames * n].reshape(frames, n) ** 2, axis=1))
-    db = 20 * np.log10(np.maximum(rms, 1e-9) / max(float(rms.max()), 1e-9))
-    loud = np.nonzero(db > -35)[0]
-    return np.maximum(db[loud[0]:loud[-1] + 1], -50.0) if len(loud) else db
+    loud = np.nonzero(np.abs(x) > 0.01 * float(np.percentile(np.abs(x), 99.5)))[0]
+    if not len(loud):
+        return x
+    pad = int(0.05 * rate)
+    return x[max(0, loud[0] - pad):loud[-1] + pad]
 
 
-def rhythm_match(a, b):
-    """How closely two loudness envelopes follow each other at their best alignment (1.00 = the same timing)."""
+def null_test(a, b):
+    """How far take b cancels take a once lined up to a fraction of a sample and matched in level: what's left,
+    in dB below a. The same sound cancels almost completely; a different delivery hardly at all."""
     import numpy as np
-    best = None
-    for lag in range(-30, 31):              # Up to 0.3 s either way
-        x, y = (a[lag:], b) if lag >= 0 else (a, b[-lag:])
-        n = min(len(x), len(y))
-        if n >= 50 and np.std(x[:n]) > 0 and np.std(y[:n]) > 0:
-            r = float(np.corrcoef(x[:n], y[:n])[0, 1])
-            best = r if best is None else max(best, r)
-    return best
+    size = 1 << (len(a) + len(b) - 1).bit_length()
+    fa, fb = np.fft.rfft(a, size), np.fft.rfft(b, size)
+    corr = np.fft.irfft(fa * np.conj(fb), size)
+    peak = int(np.argmax(corr))
+    y0, y1, y2 = corr[peak - 1], corr[peak], corr[(peak + 1) % size]
+    bend = y0 - 2 * y1 + y2
+    lag = (peak if peak < size // 2 else peak - size) + (0.5 * (y0 - y2) / bend if bend else 0.0)
+    shifted = np.fft.irfft(fb * np.exp(-2j * np.pi * np.arange(len(fb)) * lag / size), size)[:len(a)]
+    gain = float(np.dot(a, shifted)) / max(float(np.dot(shifted, shifted)), 1e-20)
+    rest = a - gain * shifted
+    return 10 * math.log10(max(float(np.dot(rest, rest)), 1e-20) / max(float(np.dot(a, a)), 1e-20))
+
+
+def band_balance(x, rate):
+    """Level in each octave band from 500 Hz (above the voice's fundamental), in dB against the whole, leaving
+    out bands more than 40 dB down (noise, or above what the recording reaches)."""
+    import numpy as np
+    power = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    freqs = np.fft.rfftfreq(len(x), 1.0 / rate)
+    total = max(float(power.sum()), 1e-20)
+    bands, centre = {}, 500
+    while centre * math.sqrt(2) <= rate / 2:
+        level = float(power[(freqs >= centre / math.sqrt(2)) & (freqs < centre * math.sqrt(2))].sum())
+        bands[centre] = 10 * math.log10(max(level, 1e-20) / total)
+        centre *= 2
+    strongest = max(bands.values())
+    return {band: level for band, level in bands.items() if level > strongest - 40}
+
+
+def tone_difference(a, b):
+    """The largest difference in octave-band balance between two takes, as (dB, band), or None."""
+    common = [band for band in a if band in b]
+    if not common:
+        return None
+    band = max(common, key=lambda f: abs(a[f] - b[f]))
+    return abs(a[band] - b[band]), band
+
+
+def band_name(band):
+    return f"{band // 1000}k" if band >= 1000 else str(band)
 
 
 def heard_by_mic(x, rate):
-    """What the microphone made of one take: its level, plus pitch, pitch range and loudness envelope if it
-    heard the voice."""
+    """What the recording made of one take: its level and, if it heard the voice, the pitch, pitch range, the
+    voice itself (for the null test) and its octave-band balance."""
     import numpy as np
-    heard = {"level": None, "pitch": None, "range": None, "env": None}
+    heard = {"level": None, "pitch": None, "range": None, "speech": None, "bands": None}
     if len(x):
         loudness = float(np.percentile(np.abs(x), 99.5))
         heard["level"] = 20 * math.log10(max(loudness, 1e-6))
         if loudness >= HEARD_LEVEL:
             s = analyse_samples(x / loudness, rate)
-            heard.update(pitch=s["pitch"], range=s["range"], env=envelope(x, rate))
+            speech = speech_part(x, rate)
+            heard.update(pitch=s["pitch"], range=s["range"], speech=speech, bands=band_balance(speech, rate))
     return heard
 
 
@@ -1265,11 +1303,9 @@ def onset_gap(a, b):
 
 
 def take_value(take, name):
-    """One measurement of a live take: length, pitch, range, rhythm or words (None for a reference take itself)."""
-    if name == "length":
-        return take["length"]
-    if name == "rhythm":
-        return None if take["rhythm_ref"] else take["rhythm"]
+    """One measurement of a live take: length, words, pitch, range, null or tone (None for a reference take)."""
+    if name in ("length", "null", "tone"):
+        return take[name]
     if name == "words":
         return None if take["words_ref"] else take["word_gap"]
     return take["mic"][name] if take["mic"] else None
@@ -1287,7 +1323,7 @@ def live_differences(takes, key):
             notes.append(f"length {d:+.2f}s")
     a, b = values("A", "words"), values(key, "words")      # A's: its repeats against the first
     if a and b and statistics.mean(b) > max(max(a) + 0.05, 0.08):
-        notes.append(f"words up to {max(b) * 1000:.0f} ms off, against {max(a) * 1000:.0f} ms between repeats after silence")
+        notes.append(f"words up to {max(b) * 1000:.0f} ms off (repeats: {max(a) * 1000:.0f} ms)")
     a, b = values("A", "pitch"), values(key, "pitch")
     if len(a) >= 2 and b:
         d = 12 * math.log2(statistics.mean(b) / statistics.mean(a))
@@ -1298,16 +1334,20 @@ def live_differences(takes, key):
         d = statistics.mean(b) - statistics.mean(a)
         if abs(d) > max(1.0, 2 * (max(a) - min(a))):
             notes.append(f"range {d:+.1f} st")
-    a, b = values("A", "rhythm"), values(key, "rhythm")
-    if a and b and statistics.mean(b) < min(a) - 0.1:
-        notes.append(f"rhythm {statistics.mean(b):.2f} against {min(a):.2f} for repeats after silence")
+    a, b = values("A", "null"), values(key, "null")        # A's: its repeats against the first
+    if a and b and statistics.mean(b) > max(a) + 6:
+        notes.append(f"cancels to {round(statistics.mean(b))} dB (repeats: {round(max(a))} dB)")
+    a, b = values("A", "tone"), values(key, "tone")
+    if a and b and statistics.mean(b) > max(max(a) + 1.0, 1.0):
+        worst = max((t for t in takes if t["key"] == key and t["tone"] is not None), key=lambda t: t["tone"])
+        notes.append(f"tone {statistics.mean(b):.1f} dB off at {band_name(worst['tone_band'])} (repeats: {max(a):.1f} dB)")
     return notes
 
 
 def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic_device, out_dir, report, ask):
     """Is the sentence spoken live any differently after silence, straight after another sentence, or straight
     after a silent warm-up line? Each condition `repeats` times, interleaved. The voice's own word timings are
-    compared, and each take is recorded through the microphone to compare pitch."""
+    compared, and each take is recorded (through the microphone, or digitally) to compare the sound itself."""
     try:
         if importlib.util.find_spec("numpy") is None:
             raise ImportError("the analysis needs numpy")
@@ -1348,12 +1388,12 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
             take = {"number": number, "name": name, "key": key, "before": before, "mic": None, "heard": "-",
                     "length": finished - started if times.started and times.finished else None,
                     "onsets": word_onsets(list(times.words)), "word_gap": None, "words_ref": False,
-                    "rhythm": None, "rhythm_ref": False}
+                    "null": None, "tone": None, "tone_band": None, "sound_ref": False}
             if mic:
                 time.sleep(0.4)                 # The end of the sentence reaching the microphone
                 x = mic.between(started, finished + 0.4)
                 mic.save(x, os.path.join(out_dir, f"live_{number:02d}_{name}.wav"))
-                take["mic"] = heard_by_mic(x, Microphone.RATE)
+                take["mic"] = heard_by_mic(x, mic.rate)
             if ask:
                 take["heard"] = ask_heard(f"sentence in take {number}")
             takes.append(take)
@@ -1367,14 +1407,16 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
         return
 
     words_ref = next((t for t in takes if t["key"] == "A" and t["onsets"]), None)
-    rhythm_ref = next((t for t in takes if t["key"] == "A" and t["mic"] and t["mic"]["env"] is not None), None)
+    sound_ref = next((t for t in takes if t["key"] == "A" and t["mic"] and t["mic"]["speech"] is not None), None)
     for t in takes:
         if words_ref and t["onsets"]:
             t["words_ref"] = t is words_ref
             t["word_gap"] = onset_gap(words_ref["onsets"], t["onsets"])
-        if rhythm_ref and t["mic"] and t["mic"]["env"] is not None:
-            t["rhythm_ref"] = t is rhythm_ref
-            t["rhythm"] = rhythm_match(rhythm_ref["mic"]["env"], t["mic"]["env"])
+        if sound_ref and t["mic"] and t["mic"]["speech"] is not None:
+            t["sound_ref"] = t is sound_ref
+            if t is not sound_ref:
+                t["null"] = null_test(sound_ref["mic"]["speech"], t["mic"]["speech"])
+                t["tone"], t["tone_band"] = tone_difference(sound_ref["mic"]["bands"], t["mic"]["bands"]) or (None, None)
 
     def enough(has):
         """At least two takes after silence and one of each other kind have this measurement."""
@@ -1382,24 +1424,28 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
                 and all(any(t["key"] == k and has(t) for t in takes) for k, _ in LIVE_CONDITIONS[1:]))
     words_ok = enough(lambda t: t["onsets"] is not None)
     pitch_ok = enough(lambda t: t["mic"] is not None and t["mic"]["pitch"] is not None)
+    sound_ok = enough(lambda t: t["mic"] is not None and t["mic"]["speech"] is not None)
 
     report()
     report(f"Live check: the sentence spoken live after {quiet:.0f} s of silence (A), straight after a sentence spoken")
     report(f"aloud (B), and straight after a silent warm-up line (C), {repeats} times each, in shuffled order")
-    report(f"  {'#':>2} {'take':5} {'before it':26} {'length':>7} {'words':>6} {'mic':>6} {'pitch':>6} {'range':>7} "
-           f"{'rhythm':>7}  heard")
+    report(f"  {'#':>2} {'take':5} {'before it':24} {'length':>7} {'words':>6} {'level':>6} {'pitch':>6} {'range':>7} "
+           f"{'null':>6} {'tone':>6}  heard")
     for t in takes:
         m = t["mic"] or {}
         words = "ref" if t["words_ref"] else "-" if t["word_gap"] is None else f"{t['word_gap'] * 1000:.0f}ms"
         level = "-" if not t["mic"] else "none" if m["level"] is None else f"{m['level']:.0f}dB"
         pitch = "-" if m.get("pitch") is None else f"{m['pitch']:.0f}Hz"
-        rhythm = "ref" if t["rhythm_ref"] else fmt(t["rhythm"], "", 2)
-        report(f"  {t['number']:>2} {t['name']:5} {t['before']:26} {fmt(t['length']):>7} {words:>6} {level:>6} {pitch:>6} "
-               f"{fmt(m.get('range'), 'st', 1):>7} {rhythm:>7}  {t['heard']}")
+        null = "ref" if t["sound_ref"] else "-" if t["null"] is None else f"{round(t['null'])}dB"
+        tone = "ref" if t["sound_ref"] else fmt(t["tone"], "dB", 1)
+        report(f"  {t['number']:>2} {t['name']:5} {t['before']:24} {fmt(t['length']):>7} {words:>6} {level:>6} {pitch:>6} "
+               f"{fmt(m.get('range'), 'st', 1):>7} {null:>6} {tone:>6}  {t['heard']}")
     report("length = the voice starting to finishing")
     report("words  = the most any word started early or late, against the reference take (the voice's own timings)")
-    report("mic    = how loud the microphone heard it   pitch, range = median pitch and pitch variation it heard")
-    report("rhythm = how closely the take's loudness follows the reference take's (1.00 = the same)")
+    report("level  = how loud the recording is   pitch, range = median pitch and pitch variation in the recording")
+    report("null   = what's left after lining the take up with the reference take (to a fraction of a sample),")
+    report("         matching the level and subtracting, in dB below the reference: lower = more alike")
+    report("tone   = the biggest difference in octave-band balance from the reference take")
     if mic:
         heard = sum(1 for t in takes if t["mic"] and t["mic"]["pitch"] is not None)
         nothing = [t["name"] for t in takes if t["mic"] and t["mic"]["level"] is None]
@@ -1419,33 +1465,35 @@ def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, mic
     if len([t for t in takes if t["key"] == "A"]) < 2:
         report("Too few takes after silence to judge: run at least two rounds (--rounds).")
         return
-    compared = ", ".join(["length"] + (["word timing"] if words_ok else []) + (["pitch"] if pitch_ok else []))
+    compared = ", ".join(["length"] + (["word timing"] if words_ok else []) + (["pitch"] if pitch_ok else [])
+                         + (["null test", "tone balance"] if sound_ok else []))
     found = {}
     for key, before in LIVE_CONDITIONS[1:]:
         if not any(t["key"] == key for t in takes):
             report(f"  after {before + ':':26} not reached")
             continue
         found[key] = live_differences(takes, key)
-        verdict = f"DIFFERENT ({', '.join(found[key])})" if found[key] else f"the same ({compared})"
+        verdict = f"DIFFERENT ({', '.join(found[key])})" if found[key] else f"no measured difference ({compared})"
         report(f"  after {before + ':':26} {verdict}")
     if len(found) < len(LIVE_CONDITIONS) - 1:
         report("Stopped before every kind of take was done: run it to the end for a verdict.")
-    elif found["C"]:
-        report("A silent warm-up line just before changes the delivery: a warm-up before each reply, as ORAC's")
-        report("old idle warm-up did, would carry that over. Compare the takes by ear.")
-    elif found["B"]:
-        report("A sentence spoken aloud just before changes the delivery, but a silent warm-up line doesn't:")
-        report("the voice carries on from what it has actually spoken. Compare the takes by ear.")
-    elif pitch_ok:
-        report("The live voice says the sentence the same way whatever came just before it. It carries nothing")
-        report("from one sentence to the next, so a warm-up line, silent or spoken, can't change how a reply")
-        report("starts: the words decide.")
+    elif found["C"] or found["B"]:
+        report("Takes after " + " and after ".join(before for key, before in LIVE_CONDITIONS[1:] if found[key])
+               + " measured differently from")
+        report("takes after silence (above). The recordings are saved for listening and for your own tools.")
+    elif sound_ok:
+        report("No measured difference between the kinds of take in length, word timing, pitch, null depth or tone")
+        report("balance: takes of different kinds cancel against the reference as deeply as repeats after silence.")
     elif words_ok:
-        report("The live voice keeps the same timing, word for word, whatever came just before it: no sign that")
-        report("it carries anything from one sentence to the next. The microphone couldn't compare the pitch.")
+        report("No measured difference in length or word timing. Pitch and the sound itself couldn't be compared:")
+        report("the recording didn't hear the voice.")
     else:
-        report("Only the overall length could be measured, and it doesn't change. The pitch and word timing")
-        report("couldn't be compared, so whether the tone changes is down to your ears.")
+        report("No measured difference in length. Word timing, pitch and the sound itself couldn't be compared.")
+    repeats_null = max((t["null"] for t in takes if t["key"] == "A" and t["null"] is not None), default=None)
+    if repeats_null is not None:
+        report(f"Resolution: repeats after silence cancel to {round(repeats_null)} dB in these recordings, so a difference")
+        report("below that level can't show here." + (" A digital capture (see --help) cancels far deeper."
+                                                     if repeats_null > -45 else ""))
 
 
 def main():

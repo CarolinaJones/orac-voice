@@ -16,12 +16,13 @@ Tools for tracking down the flat first sentence, and a few tweaks.
   its pitch, pitch range and speaking rate. It then compares the first sentence of each reply with the
   rest, to show whether a flat opening is in its words. `--say` replays the replies.
 - **`tts_probe.py --live-check`** speaks the same sentence live after silence, straight after another
-  sentence, and straight after a silent warm-up line, to show whether the live voice carries anything
-  over from one sentence to the next. Every earlier check compared renders, which can't show that. It
-  compares when each word started (the voice's own timings) and records each take through the
-  microphone for pitch; `--list-mics` and `--mic N` pick another input if the default can't hear the
-  voice. It only claims what it could measure. The takes come in shuffled order, and silence and the
-  silent line sound the same until the sentence starts, so they can be rated blind.
+  sentence, and straight after a silent warm-up line, in shuffled order (silence and the silent line
+  sound the same until the sentence starts, so they can be rated blind). Earlier checks compared
+  renders; this compares live speech. It measures when each word started (the voice's own timings), and
+  records each take at the input's own rate, through a microphone or digitally through a loopback such
+  as BlackHole, to compare pitch, a null test (lined up to a fraction of a sample, level-matched and
+  subtracted) and octave-band tone balance. It reports what it measured and the null depth it could
+  resolve, and saves the takes as 24-bit WAVs. `--list-mics` and `--mic N` choose the input.
 - **`--from-log`** compares first sentences with the rest only within replies of two sentences or more.
 
 ### Tweaks
