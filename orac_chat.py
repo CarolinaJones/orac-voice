@@ -119,6 +119,7 @@ OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Testing against 'flattening' is
 
 OLLAMA_TIMEOUT = 120								# Seconds of silence from Ollama before a request is abandoned
 OLLAMA_NUM_BATCH = 256								# One value for every chat() call, so Ollama never sees differing runner options
+OLLAMA_KEEP_ALIVE = 14400							# Seconds the model stays loaded between requests (4h)
 
 ollama_client = Client(timeout=OLLAMA_TIMEOUT)
 
@@ -315,6 +316,11 @@ except Exception as e:
     NUM_KEEP = int(len(SYSTEM_INSTRUCTION) / CHARS_PER_TOKEN) + 10
     SYS_TOKENS_LEN = NUM_KEEP
     tokenizer_mode = "ESTIMATED"
+
+# Runner options MUST match on every request: Ollama reloads the model (cold load plus a full
+# re-prefill of the system prompt) whenever num_ctx or num_batch differ from the previous call.
+LLM_RUNNER_OPTIONS = {'num_ctx': MODEL_MAX_TOKENS, 'num_batch': OLLAMA_NUM_BATCH, 'num_keep': SYS_TOKENS_LEN}
+FIRST_TURN_TAG = "[SUBJECT: USER][PERSPECTIVE: 2nd-Person]\n"
 
 #==================================================================================================#
 #     								APPLICATION STATE & CLEANUP                                    #
@@ -604,6 +610,16 @@ def set_status(text, color=G):
         
     if 'USE_LCD' in globals() and USE_LCD: 
         update_lcd_display()
+
+def debug_line(msg, row_offset=3):
+    """ Debug output: a scrolling line in teletype mode, else a fixed row above the status line. """
+    if not state.debug: return
+    with state.terminal_lock:
+        if TELETYPE_MODE:
+            sys.stdout.write(f"{DIM}{msg}{RESET}\n")
+        elif not HEADLESS_MODE:
+            sys.stdout.write(f"\0337\033[{state.term_rows - row_offset};1H\033[2K{DIM}{msg}{RESET}\0338")
+        sys.stdout.flush()
 
 def flash_status(text, color=A, duration=3.0):
     def restore():
@@ -1613,13 +1629,14 @@ def generate_compaction_summary(pruned_msgs):
         response = ollama_client.chat(
             model=OLLAMA_MODEL,
             messages=[{'role': 'user', 'content': summary_prompt}],
+            think=False,
+            keep_alive=OLLAMA_KEEP_ALIVE,     # Without it this call resets the model's keep-alive to Ollama's 5 min default
             options={
-                'num_ctx': MODEL_MAX_TOKENS,
-                'num_batch': OLLAMA_NUM_BATCH,
+                **LLM_RUNNER_OPTIONS,
                 'temperature': 0.2,
                 'top_p': 0.85,
                 'num_predict': 150,
-                'stop': ['\n\n', '<end_of_turn>', '<eos>']
+                'stop': ['\n\n']
             }
         )
         return response['message']['content'].strip()
@@ -1663,8 +1680,8 @@ def process_system_command(user_text, tts, teletype):
             state.history_gen += 1
             state.full_message_log.clear()                     
         if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
-        try: ollama_client.chat(model=OLLAMA_MODEL, messages=[], keep_alive=0)
-        except: pass
+        # No model unload: the prompt cache is keyed on the prompt text, so nothing of the old
+        # conversation survives. Unloading only forced a cold reload + full system-prompt re-prefill.
 
         if TELETYPE_MODE:
             with state.terminal_lock:
@@ -2319,6 +2336,27 @@ def search_archival_memory(user_text):
     
     return ""
 
+def preload_model():
+    """ Loads the model and prefills the system prompt in the background at boot.
+
+    Without this the first answer pays for the cold load and a full system-prompt prefill, and its
+    first sentences are spoken while that memory/GPU churn is still going on. The request renders
+    the same prompt prefix as a real first turn, so that turn re-uses the cache. """
+    t_start = time.time()
+    try:
+        ollama_client.chat(
+            model=OLLAMA_MODEL,
+            messages=[{'role': 'system', 'content': SYSTEM_INSTRUCTION},
+                      {'role': 'user', 'content': FIRST_TURN_TAG}],
+            think=False,
+            keep_alive=OLLAMA_KEEP_ALIVE,
+            options={**LLM_RUNNER_OPTIONS, 'num_predict': 1}
+        )
+        debug_line(f"[DEBUG] Model preloaded in {time.time() - t_start:.2f}s")
+    except Exception as e:
+        log_error(f"preload_model: {type(e).__name__}: {e}")
+        debug_line(f"[DEBUG] Model preload failed: {e}")
+
 def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     try:
         _stream_ai_response(prompt, tts, teletype, epoch_id)
@@ -2414,7 +2452,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
 
     with state.hist_lock:
         if len(state.history) == 0:
-            final_prompt = f"[SUBJECT: USER][PERSPECTIVE: 2nd-Person]\n" + final_prompt
+            final_prompt = FIRST_TURN_TAG + final_prompt
         state.history.append({'role': 'user', 'content': final_prompt})
     
     # PRUNING #
@@ -2464,11 +2502,8 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             pruned = True
 
     if pruned:
-        try:
-            requests.post("http://localhost:11434/api/generate", 
-                          json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=1.0)
-        except: pass
-        time.sleep(1.0)
+        # No model unload: the pruned history re-uses the cached system prompt. Unloading forced a
+        # cold reload + full re-prefill, and the next reply was spoken while that was still going on.
         set_status("● PRUNING COMPLETED: CONTEXT WINDOW STABILIZED", A)
 
     update_header_only()
@@ -2505,11 +2540,10 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             model=OLLAMA_MODEL,
             messages=messages_to_send,
             stream=True,
-            keep_alive=14400,
+            keep_alive=OLLAMA_KEEP_ALIVE,
             think=False,
             options={
-                'num_ctx': MODEL_MAX_TOKENS,
-                'num_keep': SYS_TOKENS_LEN,
+                **LLM_RUNNER_OPTIONS,
                 'temperature': 0.85,             # Reduced from 1 to balance the new penalties
                 'top_p': 0.90,
                 'top_k': 30,
@@ -2517,10 +2551,10 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 'repeat_penalty': 1.00,          # Disabled/neutralized to avoid mathematical conflicts
                 'frequency_penalty': 0.35,       # Penalizes words based on cumulative count
                 'presence_penalty': 0.40,        # Penalizes words for appearing at least once
-                'repeat_last_n': 150, 
-                'num_batch': OLLAMA_NUM_BATCH,
+                'repeat_last_n': 150,
                 'num_predict': num_predict_override or 400,
-                'stop': ['<end_of_turn>', '<eos>']
+                # No 'stop' override: <end_of_turn> is Gemma 3 syntax (plain text to Gemma 4), and a
+                # request-level stop list replaces the model's own stop parameters
             }
         )
         for chunk in interruptible(stream, epoch_id):
@@ -2845,6 +2879,8 @@ def run_local_bot():
     recognizer.pause_threshold = 0.7 
     recognizer.non_speaking_duration = 0.3 
     recognizer.phrase_threshold = 0.5 
+
+    threading.Thread(target=preload_model, daemon=True).start()
 
     tts = MacTTS()
     teletype = TeletypeUI()
