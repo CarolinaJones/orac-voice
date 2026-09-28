@@ -8,6 +8,7 @@ a cold voice, contention with the LLM and real-time starvation apart. Quit ORAC 
     python3 extras/tts_probe.py --llm gemma4:12b-mlx      # while the MLX model streams a reply
     python3 extras/tts_probe.py --llm gemma4:12b          # same with the GGUF model, to compare
     python3 extras/tts_probe.py --menu                    # choose the voice from a list first
+    python3 extras/tts_probe.py --ssml-check              # which SSML settings does the voice obey?
 
 Voice: set VOICE below, pass --voice "ORAC Personal Voice", or pick from a list with --menu. With
 none of these, the probe uses ORAC's own VOICE from orac_chat.py, by ORAC's rule: the voice with
@@ -32,11 +33,18 @@ RTF = seconds of audio produced per second of synthesis; near or below ~1.5x the
 ahead of real time. "decomp" = pages the OS had to decompress during the cold test; a jump there
 means memory was squeezed while idle.
 
+--ssml-check renders the sentence once per setting (SSML rate, pitch, volume and emphasis, and the
+utterance's own rate and pitchMultiplier), measures each render's length, pitch and loudness, and
+reports which settings change the audio at all. The voice renders the same input to the same bytes,
+so a render identical to the baseline means that setting is ignored. It takes about a minute and
+needs no model.
+
 The settings, round notes and table are also saved to a text file next to this script, named
 tts_probe_<date>_<time>_<model>.txt (--log FILE to save it somewhere else).
 """
 import argparse
 import ast
+import math
 import os
 import platform
 import re
@@ -299,12 +307,21 @@ def choose_voice(args, orac, say):
     return None, "no voice chosen"
 
 
-def orac_ssml(text, rate, pitch, volume, emphasis):
-    """The SSML wrapper ORAC's MacTTS builds around each utterance."""
+def build_ssml(text, prosody=None, emphasis=""):
+    """<speak>[<prosody ...>]<s>[<emphasis>]text[</emphasis>]</s>[</prosody>]</speak>, as ORAC builds it."""
     escaped = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                    .replace('"', "&quot;").replace("'", "&apos;"))
-    inner = f'<emphasis level="{emphasis}">{escaped}</emphasis>' if emphasis else escaped
-    return f'<speak><prosody rate="{rate}%" pitch="{pitch}" volume="{volume}"><s>{inner}</s></prosody></speak>'
+    body = f'<emphasis level="{emphasis}">{escaped}</emphasis>' if emphasis else escaped
+    inner = f"<s>{body}</s>"
+    if prosody:
+        attributes = "".join(f' {name}="{value}"' for name, value in prosody.items())
+        inner = f"<prosody{attributes}>{inner}</prosody>"
+    return f"<speak>{inner}</speak>"
+
+
+def orac_ssml(text, rate, pitch, volume, emphasis):
+    """The SSML wrapper ORAC's MacTTS builds around each utterance."""
+    return build_ssml(text, {"rate": f"{rate}%", "pitch": pitch, "volume": volume}, emphasis)
 
 
 def make_utterance(text, voice, rate):
@@ -488,6 +505,162 @@ def table(rows):
     return lines
 
 
+def read_caf(path):
+    """(sample rate, (flags, channels, bits), raw sample bytes) of a linear-PCM CAF file, as AVAudioFile writes it."""
+    import struct
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:4] != b"caff":
+        raise ValueError(f"{path} is not a CAF file")
+    pos, rate, layout, raw = 8, None, None, b""
+    while pos + 12 <= len(data):
+        kind, size = data[pos:pos + 4], struct.unpack(">q", data[pos + 4:pos + 12])[0]
+        pos += 12
+        if size < 0:                        # Size not filled in: the chunk runs to the end of the file
+            size = len(data) - pos
+        if kind == b"desc":
+            rate, _, flags, _, _, channels, bits = struct.unpack(">d4sIIIII", data[pos:pos + 32])
+            layout = (flags, channels, bits)
+        elif kind == b"data":
+            raw = data[pos + 4:pos + size]  # After the edit count
+        pos += size
+    return rate, layout, raw
+
+
+def analyse(rate, layout, raw):
+    """Length, speech span, median pitch, pitch range and loudness of a render. Pitch and loudness need numpy."""
+    flags, channels, bits = layout
+    frames = len(raw) // (bits // 8) // channels
+    stats = {"length": frames / rate, "speech": None, "pitch": None, "range": None, "level": None}
+    try:
+        import numpy as np
+    except ImportError:
+        return stats
+    kind = ("<" if flags & 2 else ">") + ("f" if flags & 1 else "i") + str(bits // 8)
+    x = np.frombuffer(raw[:frames * channels * (bits // 8)], dtype=kind).astype(np.float64).reshape(-1, channels)[:, 0]
+    if not flags & 1:
+        x /= 2.0 ** (bits - 1)
+    loud = np.nonzero(np.abs(x) > 0.01)[0]
+    if not len(loud):
+        return stats
+    stats["speech"] = (loud[-1] - loud[0]) / rate
+
+    # Pitch: YIN on 40 ms frames every 10 ms, at 16 kHz, confidently voiced frames only
+    step = rate / 16000.0
+    width = max(1, int(round(step)))
+    y = np.convolve(x, np.ones(width) / width, mode="same")[(np.arange(int(len(x) / step)) * step).astype(int)]
+    sr, n, hop, tmin, tmax = 16000, 640, 160, 16000 // 500, 16000 // 60
+    floor = 0.1 * np.sqrt(np.mean(y ** 2))
+    size = 1 << (2 * n + tmax).bit_length()
+    f0, voiced_rms = [], []
+    for start in range(0, len(y) - n - tmax, hop):
+        seg = y[start:start + n + tmax]
+        frame_rms = np.sqrt(np.mean(seg[:n] ** 2))
+        if frame_rms < floor:
+            continue
+        voiced_rms.append(frame_rms)
+        corr = np.fft.irfft(np.conj(np.fft.rfft(seg[:n], size)) * np.fft.rfft(seg, size), size)[:tmax + 1]
+        sq = np.concatenate(([0.0], np.cumsum(seg ** 2)))
+        energy = sq[n:n + tmax + 1] - sq[:tmax + 1]
+        d = np.maximum(energy[0] + energy - 2 * corr, 0.0)
+        cmnd = np.ones(tmax + 1)
+        cmnd[1:] = d[1:] * np.arange(1, tmax + 1) / np.maximum(np.cumsum(d[1:]), 1e-12)
+        below = np.nonzero(cmnd[tmin:tmax] < 0.2)[0]
+        if len(below):
+            tau = tmin + below[0]
+            while tau + 1 < tmax and cmnd[tau + 1] < cmnd[tau]:
+                tau += 1
+            f0.append(sr / tau)
+    if voiced_rms:
+        stats["level"] = 20 * np.log10(np.sqrt(np.mean(np.square(voiced_rms))))
+    if len(f0) >= 10:
+        semitones = 12 * np.log2(np.array(f0) / np.median(f0))
+        stats["pitch"] = float(np.median(f0))
+        stats["range"] = float(np.percentile(semitones, 90) - np.percentile(semitones, 10))
+    return stats
+
+
+# (label, control, how): each render changes one thing from its baseline
+SSML_CHECKS = [
+    ("plain text",           None,              {}),
+    ("SSML, no settings",    None,              {"ssml": {}}),
+    ("SSML rate 70%",        "SSML rate",       {"ssml": {"rate": "70%"}}),
+    ("SSML rate 150%",       "SSML rate",       {"ssml": {"rate": "150%"}}),
+    ("SSML pitch x-low",     "SSML pitch",      {"ssml": {"pitch": "x-low"}}),
+    ("SSML pitch x-high",    "SSML pitch",      {"ssml": {"pitch": "x-high"}}),
+    ("SSML volume x-soft",   "SSML volume",     {"ssml": {"volume": "x-soft"}}),
+    ("SSML volume x-loud",   "SSML volume",     {"ssml": {"volume": "x-loud"}}),
+    ("SSML emphasis strong", "SSML emphasis",   {"ssml": {}, "emphasis": "strong"}),
+    ("pitchMultiplier 0.5",  "pitchMultiplier", {"pitch_multiplier": 0.5}),
+    ("pitchMultiplier 2.0",  "pitchMultiplier", {"pitch_multiplier": 2.0}),
+    ("rate 0.35",            "utterance rate",  {"rate": 0.35}),
+    ("rate 0.65",            "utterance rate",  {"rate": 0.65}),
+]
+
+
+def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report):
+    """Renders `text` once per setting and reports which settings change the audio."""
+    checks = list(SSML_CHECKS) + [("ORAC's SSML", None, {"ssml": orac_prosody, "emphasis": orac_emphasis})]
+    if orac_emphasis:
+        checks.append(("ORAC's SSML, no emphasis", None, {"ssml": orac_prosody}))
+    results = {}
+    for number, (label, control, how) in enumerate(checks, 1):
+        print(f"  rendering {number}/{len(checks)}: {label}", flush=True)
+        if "ssml" in how:
+            utterance = make_utterance(build_ssml(text, how["ssml"], how.get("emphasis", "")), voice, None)
+        else:
+            utterance = make_utterance(text, voice, how.get("rate"))
+            if "pitch_multiplier" in how:
+                utterance.setPitchMultiplier_(how["pitch_multiplier"])
+        path = os.path.join(out_dir, f"{number:02d}_{re.sub(r'[^A-Za-z0-9.%-]+', '_', label)}.caf")
+        with objc.autorelease_pool():
+            rendered = render(synth, utterance, path)
+        if not rendered["audio"] or not os.path.exists(path):
+            report(f"The voice produced no audio for {label!r}: it may not support offline rendering.")
+            return
+        rate, layout, raw = read_caf(path)
+        results[label] = {"control": control, "ssml": "ssml" in how, "raw": raw, **analyse(rate, layout, raw)}
+
+    def compare(row, base):
+        if row["raw"] == base["raw"]:
+            return "identical"
+        notes = []
+        if abs(row["length"] - base["length"]) > 0.03 * base["length"]:
+            notes.append(f"length {row['length'] - base['length']:+.2f}s")
+        if row["pitch"] and base["pitch"] and abs(12 * math.log2(row["pitch"] / base["pitch"])) >= 0.5:
+            notes.append(f"pitch {12 * math.log2(row['pitch'] / base['pitch']):+.1f} semitones")
+        if row["level"] is not None and base["level"] is not None and abs(row["level"] - base["level"]) >= 1:
+            notes.append(f"level {row['level'] - base['level']:+.1f} dB")
+        return ", ".join(notes) or "different audio, same length, pitch and level"
+
+    plain, ssml = results["plain text"], results["SSML, no settings"]
+    report()
+    report("SSML check: the same sentence rendered with one setting changed at a time")
+    report(f"{'render':26} {'length':>7} {'speech':>7} {'pitch':>7} {'range':>6} {'level':>7}  compared with its baseline")
+    for label, row in results.items():
+        if label == "plain text":
+            versus = "baseline for the utterance rate and pitchMultiplier rows"
+        elif label == "SSML, no settings":
+            versus = f"baseline for the SSML rows; vs plain text: {compare(row, plain)}"
+        else:
+            versus = compare(row, ssml if row["ssml"] else plain)
+        report(f"{label:26} {fmt(row['length']):>7} {fmt(row['speech']):>7} {fmt(row['pitch'], 'Hz', 0):>7} "
+               f"{fmt(row['range'], 'st', 1):>6} {fmt(row['level'], 'dB', 1):>7}  {versus}")
+    report()
+    report("Verdict (does the voice obey the setting?)")
+    for control in dict.fromkeys(row["control"] for row in results.values() if row["control"]):
+        rows = {label: row for label, row in results.items() if row["control"] == control}
+        base = ssml if control.startswith("SSML") else plain
+        obeyed = [label for label, row in rows.items() if row["raw"] != base["raw"]]
+        verdict = "obeyed" if len(obeyed) == len(rows) else "partly obeyed" if obeyed else "IGNORED"
+        report(f"  {control:16} {verdict:14} ({'; '.join(f'{label}: {compare(row, base)}' for label, row in rows.items())})")
+    report()
+    report("length = the whole render, speech = first to last sound, pitch = median voice pitch,")
+    report("range = pitch variation in semitones (10th to 90th percentile; lower = flatter), level = loudness")
+    report(f"Renders saved in {out_dir}")
+    report(f'Listen: for f in "{out_dir}"/*.caf; do echo "$f"; afplay "$f"; done')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--text", default=DEFAULT_TEXT, help="sentence to speak, or SSML starting with <speak>")
@@ -511,6 +684,8 @@ def main():
     ap.add_argument("--no-play", action="store_true", help="don't play the cold renders back")
     ap.add_argument("--no-ask", action="store_true", help="don't ask how each round sounded")
     ap.add_argument("--nap", action="store_true", help="allow App Nap (ORAC's behaviour before it opted out)")
+    ap.add_argument("--ssml-check", action="store_true",
+                    help="render the sentence once per SSML/utterance setting and report which ones change the audio")
     ap.add_argument("--log", metavar="FILE", help="where to save the results (default: a dated .txt next to this script)")
     args = ap.parse_args()
 
@@ -521,9 +696,14 @@ def main():
             print(f"{voice.name():32} {voice.language():8} {kind:15} {voice.identifier()}")
         return
 
-    log_path = args.log or default_log_path(args.llm)
+    text = open(args.ssml_file, encoding="utf-8").read() if args.ssml_file else args.text
+    if args.ssml_check and text.lstrip().startswith("<speak"):
+        sys.exit("--ssml-check needs a plain sentence (it adds the SSML itself).")
+
+    label = "ssml-check" if args.ssml_check else args.llm
+    log_path = args.log or default_log_path(label)
     if os.path.isdir(log_path):
-        log_path = os.path.join(log_path, os.path.basename(default_log_path(args.llm)))
+        log_path = os.path.join(log_path, os.path.basename(default_log_path(label)))
     report = Report(log_path)
     report(f"ORAC TTS probe  ·  {datetime.now():%Y-%m-%d %H:%M:%S}")
     report(machine_info())
@@ -543,7 +723,6 @@ def main():
     def marked(label, value, source):
         return f"{label} {value}" + ("" if source == "orac_chat.py" else f" ({source})")
 
-    text = open(args.ssml_file, encoding="utf-8").read() if args.ssml_file else args.text
     spoken = text
     if args.plain:
         ssml_line = "none (--plain)"
@@ -565,12 +744,15 @@ def main():
                " this probe tests AVSpeechSynthesizer.")
     report(f"SSML:    {ssml_line}")
     report(f"Text:    {spoken}")
-    if args.llm:
+    if args.ssml_check:
+        pass
+    elif args.llm:
         report(f"LLM:     {args.llm} on Ollama {ollama_version(args.host)}  ("
                f"{marked('num_ctx', num_ctx, num_ctx_src)}, {marked('num_batch', num_batch, num_batch_src)})")
     else:
         report("LLM:     none (voice only)")
-    report(f"Rounds:  {args.rounds}, each after {args.idle:.0f} s idle  ·  App Nap {'allowed' if args.nap else 'off'}")
+    if not args.ssml_check:
+        report(f"Rounds:  {args.rounds}, each after {args.idle:.0f} s idle  ·  App Nap {'allowed' if args.nap else 'off'}")
     report("Settings are ORAC's own (orac_chat.py) unless marked.")
 
     activity = None
@@ -584,6 +766,16 @@ def main():
     times = SpeechTimes.alloc().init()
     synth.setDelegate_(times)
     out_dir = tempfile.mkdtemp(prefix="orac_tts_probe_")
+    if args.ssml_check:
+        try:
+            ssml_check(synth, voice, spoken, {"rate": f"{rate}%", "pitch": pitch, "volume": volume}, emphasis,
+                       out_dir, report)
+        except KeyboardInterrupt:
+            report("\nStopped early (Ctrl+C).")
+        report.save()
+        if report.path:
+            print(f"Results saved to {report.path}")
+        return
     system_prompt = orac_system_prompt() if args.llm else None
     ask = not args.no_ask and sys.stdin.isatty()
     rows, load = [], None
