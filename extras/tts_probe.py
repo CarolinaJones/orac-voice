@@ -48,8 +48,9 @@ one utterance sound different from each on its own. About a minute; no model nee
 utterance (a sentence, or more when it grouped them). The probe renders each one again, with the model
 idle and nothing said before it, and measures it: words per second, median pitch and pitch range. It
 then compares the first sentence of each reply with the rest, to show whether a flat opening is in its
-words. Add --say to hear the replies again, spoken as ORAC spoke them. --sessions N covers ORAC's last N
-start-ups (default 1).
+words. Each render is also saved as a WAV, named by reply and sentence, to line up against a
+recording of ORAC itself (the same words as ORAC spoke them, with nothing else playing). Add --say to hear
+the replies again, spoken as ORAC spoke them. --sessions N covers ORAC's last N start-ups (default 1).
 
 --live-check tests what renders can't show: whether the live voice carries anything from one sentence
 to the next. Each take is 20 s of silence (--idle), then the sentence spoken live: on its own (A),
@@ -60,7 +61,7 @@ started; it also records every take through the microphone ORAC listens with (an
 --list-mics) to compare pitch, pitch range, and the sound itself: a null test (the take lined up with the
 first one to a fraction of a sample, level-matched and subtracted) and octave-band tone balance. Stay quiet
 while it runs (about five minutes). Each take is saved whole, as heard (the line before the sentence
-included), as a 24-bit .wav file at the input's own rate.
+included), as a .wav file at the input's own rate.
 
 For an exact comparison, capture the sound digitally rather than through the air: install BlackHole
 (brew install blackhole-2ch), create a Multi-Output Device in Audio MIDI Setup with your speaker and
@@ -1078,7 +1079,8 @@ def first_vs_rest(firsts, rest, report):
 def log_check(synth, times, voice, prosody, emphasis, runs, out_dir, report, say):
     """Renders each utterance ORAC logged and measures it, then compares the first of each reply with the rest."""
     report()
-    report("What ORAC said, each utterance rendered again here with the model idle")
+    report("What ORAC said, each utterance rendered again here with the model idle, and saved as a WAV")
+    report("(s<start-up>_r<reply>_<sentence>_<first words>.wav) to line up against a recording of ORAC")
     report("spoke = how long ORAC took to say it   render = length of the same words rendered now")
     report("words/s = speaking rate   pitch = median voice pitch   range = pitch variation (lower = less variation)")
     all_firsts, all_rest = [], []
@@ -1098,6 +1100,10 @@ def log_check(synth, times, voice, prosody, emphasis, runs, out_dir, report, say
                 if rendered is None:
                     report(f"  {number:>2} {fmt(line['spoke'], 's', 1):>6} {'no audio':>7}  {line['text'].strip()}")
                     continue
+                samples = samples_of(rendered[1], rendered[2])
+                if samples is not None:
+                    words = "_".join(re.sub(r"[^A-Za-z0-9]+", "", w) for w in line["text"].split()[:5]).strip("_")
+                    save_wav(samples, rendered[0], os.path.join(out_dir, f"s{run_number}_r{reply_number:02d}_{number}_{words}.wav"))
                 s = analyse(*rendered)
                 s["wps"] = len(line["text"].split()) / s["speech"] if s["speech"] else None
                 note = ("  (interrupted)" if line["interrupted"]
@@ -1173,15 +1179,7 @@ class Microphone:
         return np.frombuffer(data, dtype="<f4").astype(np.float64)
 
     def save(self, x, path):
-        """A 24-bit WAV at the input's own rate."""
-        import wave
-        import numpy as np
-        whole = (np.clip(x, -1.0, 1.0 - 2.0 ** -23) * 2 ** 23).astype("<i4")
-        with wave.open(path, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(3)
-            w.setframerate(self.rate)
-            w.writeframes(whole.view(np.uint8).reshape(-1, 4)[:, :3].tobytes())
+        save_wav(x, self.rate, path)
 
     def close(self):
         self._running = False
@@ -1193,6 +1191,17 @@ class Microphone:
             pass
         finally:
             self._pa.terminate()
+
+
+def save_wav(x, rate, path):
+    """A mono 16-bit WAV."""
+    import wave
+    import numpy as np
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(int(rate))
+        w.writeframes((np.clip(x, -1.0, 1.0) * 32767).astype("<i2").tobytes())
 
 
 def list_mics():

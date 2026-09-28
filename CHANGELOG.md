@@ -14,7 +14,8 @@ Tools for tracking down the flat first sentence, and a few tweaks.
   long it took and how long the voice had been quiet before it. Typed questions are logged too.
 - **`tts_probe.py --from-log`** renders each sentence ORAC said again, with the model idle, and measures
   its pitch, pitch range and speaking rate. It then compares the first sentence of each reply with the
-  rest, to show whether a flat opening is in its words. `--say` replays the replies.
+  rest. Each render is saved as a WAV, named by reply and sentence, to compare with a recording of
+  ORAC. `--say` replays the replies.
 - **`tts_probe.py --live-check`** speaks the same sentence live after silence, straight after another
   sentence, and straight after a silent warm-up line, in shuffled order (silence and the silent line
   sound the same until the sentence starts, so they can be rated blind). Earlier checks compared
@@ -22,7 +23,7 @@ Tools for tracking down the flat first sentence, and a few tweaks.
   records each take at the input's own rate, through a microphone or digitally through a loopback such
   as BlackHole, to compare pitch, a null test (lined up to a fraction of a sample, level-matched and
   subtracted) and octave-band tone balance. It reports what it measured and the null depth it could
-  resolve, and saves the takes as 24-bit WAVs. `--list-mics` and `--mic N` choose the input.
+  resolve, and saves the takes as WAVs. `--list-mics` and `--mic N` choose the input.
 - **`--from-log`** compares first sentences with the rest only within replies of two sentences or more.
 
 ### Tweaks
