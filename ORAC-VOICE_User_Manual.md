@@ -90,7 +90,7 @@ Available whenever the terminal UI is active. In Headless Mode, **Ctrl+C** still
 | **Ctrl+C** | Gracefully triggers the same shutdown sequence as saying "Exit interface". Works in every state, even with the activator key removed. |
 | **Option+M** | Toggle microphone mute on/off |
 | **Option+T** | Toggle Text Selection Mode — lets you select and copy terminal text; suspends scroll-wheel history navigation while active |
-| **Option+D** | Toggle Debug Mode — shows extra timing and diagnostic info in the UI |
+| **Option+D** | Toggle Debug Mode — shows extra timing and diagnostic info in the UI, and logs timings, what ORAC heard and what he said to `ollama_debug.log` |
 | **Mouse scroll / ↑ / ↓ / Page Up / Page Down** | Scroll back through conversation history |
 
 ---
@@ -117,7 +117,7 @@ These are set at the top of `orac_chat.py`.
 
 ## 6. Known Limitations
 
-- **Flat voice with the MLX model**: with `gemma4:12b-mlx`, the voice can sound flat for the first sentence or two after ORAC has been idle. The default `gemma4:12b` model doesn't do this. `extras/tts_probe.py` is there to help track it down.
+- **Flat first sentence**: sometimes the first sentence of a reply sounds flat while the rest sound as they should, with `gemma4:12b` as well as `gemma4:12b-mlx`. `extras/tts_probe.py` helps track it down: `--from-log` measures and replays what ORAC said, and `--live-check` tests whether the voice carries anything over from one sentence to the next.
 
 ---
 

@@ -1195,6 +1195,7 @@ class MacTTS:
                         item_pending = False
                         continue
 
+                    quiet = f"{time.time() - state.tts_last_active:.1f}s quiet before" if state.tts_last_active else "first since start-up"
                     state.is_speaking.set()
                     state.tts_last_active = time.time()
                     
@@ -1214,6 +1215,7 @@ class MacTTS:
                                     break
                                 time.sleep(0.1)
 
+                    debug_log(f"Said {text!r} ({time.time() - state.tts_last_active:.1f}s; {quiet}{'; interrupted' if state.is_interrupted.is_set() else ''})")   # tts_probe.py --from-log replays these
                     time.sleep(0.1)
                     state.tts_last_active = time.time()
                     
@@ -3141,6 +3143,7 @@ def run_local_bot():
                                 time.sleep(0.05)
 
                         user_text = state.input_queue.get()
+                        debug_log(f"Typed {user_text!r}")
                         
                         if process_system_command(user_text, tts, teletype):
                             continue

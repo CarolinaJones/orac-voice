@@ -10,6 +10,8 @@ a cold voice, contention with the LLM and real-time starvation apart. Quit ORAC 
     python3 extras/tts_probe.py --menu                    # choose the voice from a list first
     python3 extras/tts_probe.py --voice-check             # which settings does the voice obey? does context matter?
     python3 extras/tts_probe.py --say --text "Irrelevant!"  # hear one sentence with ORAC's settings
+    python3 extras/tts_probe.py --from-log --say          # measure, then replay, what ORAC said in its last run
+    python3 extras/tts_probe.py --live-check              # does the live voice carry anything between sentences?
 
 Voice: set VOICE below, pass --voice "ORAC Personal Voice", or pick from a list with --menu. With
 none of these, the probe uses ORAC's own VOICE from orac_chat.py, by ORAC's rule: the voice with
@@ -42,15 +44,30 @@ whether a phrase said first (ORAC's old warm-up line: rendered, spoken silently,
 lead-in in the same utterance) changes how the sentence is spoken, and whether two sentences spoken in
 one utterance sound different from each on its own. About a minute; no model needed.
 
+--from-log reads what ORAC said: in debug mode ORAC writes a "Said" line to ollama_debug.log for each
+utterance (a sentence, or more when it grouped them). The probe renders each one again, with the model
+idle and nothing said before it, and measures it: words per second, median pitch and pitch range. It
+then compares the first sentence of each reply with the rest, to show whether a flat opening is in its
+words. Add --say to hear the replies again, spoken as ORAC spoke them. --sessions N covers ORAC's last N
+start-ups (default 1).
+
+--live-check tests what renders can't show: whether the live voice carries anything from one sentence
+to the next. It speaks the sentence live after 20 s of silence (--idle), straight after another sentence
+spoken aloud, and straight after a silent warm-up line, 3 times each (--rounds), and records every take
+through the microphone ORAC listens with. It then compares their length, pitch, pitch range and rhythm.
+Stay quiet while it runs (about three minutes). The takes are saved as .wav files.
+
 The settings, round notes and table are also saved to a text file next to this script, named
 tts_probe_<date>_<time>_<model>.txt (--log FILE to save it somewhere else).
 """
 import argparse
 import ast
+import importlib.util
 import math
 import os
 import platform
 import re
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -936,6 +953,352 @@ def context_check(synth, times, voice, text, prosody, emphasis, baseline_raw, ou
         report("Context inside the same utterance doesn't change it either.")
 
 
+SAID_LINE = re.compile(r"^(\S+ \S+) Said (.+) \((-?\d+\.\d)s; (?:first since start-up|(-?\d+\.\d)s quiet before)(; interrupted)?\)$")
+HEARD_LINE = re.compile(r"^\S+ \S+ (?:Heard (.+) \((?:no-speech|no segments)[^()]*\)(:.*)?|Typed (.+))$")
+BOOT_LINE = re.compile(r" Personal Voice (?:selected|requested)")
+NEW_REPLY_AFTER = 3.0       # Seconds of quiet that start a new reply (ORAC can pause ~2 s inside one)
+
+
+def literal(text):
+    """A string ORAC logged with repr(), or None."""
+    try:
+        value = ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def read_said(path, sessions):
+    """What ORAC said, from the "Said" lines it logs in debug mode: one list per start-up (the last `sessions`
+    that said anything) of replies, each {"time", "label", "lines": [{"text", "spoke", "interrupted"}]}."""
+    runs, reply, asked = [[]], None, None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if BOOT_LINE.search(line):
+                runs.append([])
+                reply = asked = None
+                continue
+            m = HEARD_LINE.match(line)
+            if m:
+                if m.group(3) is not None:
+                    asked = f'after typed "{literal(m.group(3))}"'
+                elif not m.group(2):                                    # ": ignored ..." got no reply
+                    asked = f'after "{literal(m.group(1))}"'
+                continue
+            m = SAID_LINE.match(line)
+            text = literal(m.group(2)) if m else None
+            if text is None:
+                continue
+            quiet = m.group(4)
+            if reply is None or asked or quiet is None or float(quiet) >= NEW_REPLY_AFTER:
+                label = ", ".join(part for part in ("first words since start-up" if quiet is None else "", asked) if part)
+                reply = {"time": m.group(1), "label": label, "lines": []}
+                runs[-1].append(reply)
+                asked = None
+            reply["lines"].append({"text": text, "spoke": float(m.group(3)), "interrupted": bool(m.group(5))})
+    runs = [run for run in runs if run]
+    return runs[-sessions:] if sessions > 0 else runs
+
+
+def first_vs_rest(firsts, rest, report):
+    """Medians for the first utterance of each reply and for the others, and whether the first are flatter."""
+    def medians(group):
+        usable = [s for s in group if s["range"] is not None and s["wps"] is not None]
+        return {key: statistics.median(s[key] for s in usable) for key in ("range", "pitch", "wps")} if usable else None
+    first, later = medians(firsts), medians(rest)
+    for label, group, m in (("first sentence of each reply", firsts, first), ("the sentences after it", rest, later)):
+        if m:
+            report(f"  {label + f' ({len(group)})':34} range {m['range']:4.1f} st   pitch {m['pitch']:3.0f} Hz   "
+                   f"{m['wps']:.1f} words/s   (medians)")
+    if not first or not later or len(firsts) < 3 or len(rest) < 3:
+        report("  Too few replies to compare their first sentences with the rest (3 of each are needed).")
+        return
+    gap = later["range"] - first["range"]
+    if gap >= 1.5:
+        report(f"  The first sentences are flatter ({gap:.1f} st less range) even rendered on their own with the")
+        report("  model idle: the flatness is in their words.")
+    elif gap <= -1.5:
+        report(f"  The first sentences are livelier than the rest ({-gap:.1f} st more range).")
+    else:
+        report("  Rendered on their own, the first sentences are about as lively as the rest. If they sounded")
+        report("  flatter in ORAC, replay them with --say: if they sound fine now, how ORAC spoke them made the")
+        report("  difference, not the words.")
+
+
+def log_check(synth, times, voice, prosody, emphasis, runs, out_dir, report, say):
+    """Renders each utterance ORAC logged and measures it, then compares the first of each reply with the rest."""
+    report()
+    report("What ORAC said, each utterance rendered again here with the model idle")
+    report("spoke = how long ORAC took to say it   render = length of the same words rendered now")
+    report("words/s = speaking rate   pitch = median voice pitch   range = pitch variation (lower = flatter)")
+    all_firsts, all_rest = [], []
+    for run_number, run in enumerate(runs, 1):
+        firsts, rest = [], []
+        if len(runs) > 1:
+            report()
+            report(f"== ORAC start-up {run_number} of {len(runs)} (first words {run[0]['time']}) ==")
+        for reply_number, reply in enumerate(run, 1):
+            report()
+            report(f"{reply['time'][11:]}  {reply['label']}".rstrip())
+            report(f"  {'#':>2} {'spoke':>6} {'render':>7} {'words/s':>8} {'pitch':>6} {'range':>7}  text")
+            for number, line in enumerate(reply["lines"], 1):
+                path = os.path.join(out_dir, f"s{run_number}_r{reply_number:02d}_{number}.caf")
+                rendered = render_to(synth, make_utterance(build_ssml(line["text"], prosody, emphasis), voice, None), path)
+                if rendered is None:
+                    report(f"  {number:>2} {fmt(line['spoke'], 's', 1):>6} {'no audio':>7}  {line['text'].strip()}")
+                    continue
+                s = analyse(*rendered)
+                s["wps"] = len(line["text"].split()) / s["speech"] if s["speech"] else None
+                note = ("  (interrupted)" if line["interrupted"]
+                        else "  (ORAC took 1s+ longer)" if line["spoke"] - s["length"] >= 1.0 else "")
+                pitch = "-" if s["pitch"] is None else f"{s['pitch']:.0f}Hz"
+                report(f"  {number:>2} {fmt(line['spoke'], 's', 1):>6} {fmt(s['length'], 's', 1):>7} "
+                       f"{fmt(s['wps'], '', 1):>8} {pitch:>6} {fmt(s['range'], 'st', 1):>7}  {line['text'].strip()}{note}")
+                if not line["interrupted"]:
+                    (firsts if number == 1 else rest).append(s)
+        report()
+        first_vs_rest(firsts, rest, report)
+        all_firsts += firsts
+        all_rest += rest
+    if len(runs) > 1:
+        report()
+        report("Both start-ups together:" if len(runs) == 2 else f"All {len(runs)} start-ups together:")
+        first_vs_rest(all_firsts, all_rest, report)
+    if say:
+        print("\nReplaying the replies as ORAC spoke them (Ctrl+C to stop) ...", flush=True)
+        for run in runs:
+            for reply in run:
+                print(f"  {reply['time'][11:]}  {reply['label']}", flush=True)
+                for line in reply["lines"]:
+                    with objc.autorelease_pool():
+                        speak_live(synth, times, make_utterance(build_ssml(line["text"], prosody, emphasis), voice, None))
+                    time.sleep(0.1)
+                time.sleep(1.5)
+
+
+LIVE_CONDITIONS = [("A", "silence"), ("B", "a sentence spoken aloud"), ("C", "a silent warm-up line")]
+
+
+class Microphone:
+    """Records the default input, the microphone ORAC listens with, at 16 kHz in the background."""
+    RATE, CHUNK = 16000, 512
+
+    def __init__(self):
+        import pyaudio
+        self._pa = pyaudio.PyAudio()
+        self._continue = pyaudio.paContinue
+        self.chunks = []
+        try:
+            self._stream = self._pa.open(format=pyaudio.paInt16, channels=1, rate=self.RATE, input=True,
+                                         frames_per_buffer=self.CHUNK, stream_callback=self._callback)
+        except Exception:
+            self._pa.terminate()
+            raise
+
+    def _callback(self, data, frames, time_info, status):
+        self.chunks.append((time.perf_counter(), data))
+        return None, self._continue
+
+    def between(self, t0, t1):
+        """What the microphone heard from t0 to t1 (perf_counter times), as floats."""
+        import numpy as np
+        span = self.CHUNK / self.RATE
+        data = b"".join(d for t, d in list(self.chunks) if t >= t0 and t - span <= t1)
+        return np.frombuffer(data, dtype="<i2").astype(np.float64) / 32768.0
+
+    def save(self, x, path):
+        import wave
+        import numpy as np
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self.RATE)
+            w.writeframes((np.clip(x, -1.0, 1.0) * 32767).astype("<i2").tobytes())
+
+    def close(self):
+        try:
+            self._stream.stop_stream()
+            self._stream.close()
+        finally:
+            self._pa.terminate()
+
+
+def envelope(x, rate):
+    """Loudness in 10 ms steps, in dB below the loudest step, trimmed to where there's sound."""
+    import numpy as np
+    n = rate // 100
+    frames = len(x) // n
+    if frames == 0:
+        return np.zeros(0)
+    rms = np.sqrt(np.mean(x[:frames * n].reshape(frames, n) ** 2, axis=1))
+    db = 20 * np.log10(np.maximum(rms, 1e-9) / max(float(rms.max()), 1e-9))
+    loud = np.nonzero(db > -35)[0]
+    return np.maximum(db[loud[0]:loud[-1] + 1], -50.0) if len(loud) else db
+
+
+def rhythm_match(a, b):
+    """How closely two loudness envelopes follow each other at their best alignment (1.00 = the same timing)."""
+    import numpy as np
+    best = None
+    for lag in range(-30, 31):              # Up to 0.3 s either way
+        x, y = (a[lag:], b) if lag >= 0 else (a, b[-lag:])
+        n = min(len(x), len(y))
+        if n >= 50 and np.std(x[:n]) > 0 and np.std(y[:n]) > 0:
+            r = float(np.corrcoef(x[:n], y[:n])[0, 1])
+            best = r if best is None else max(best, r)
+    return best
+
+
+def heard_by_mic(x, rate):
+    """Pitch, pitch range and loudness envelope of one recorded take, or None if the microphone barely heard it."""
+    import numpy as np
+    loudness = float(np.percentile(np.abs(x), 99.5)) if len(x) else 0.0
+    if loudness < 0.003:                    # About -50 dBFS
+        return None
+    s = analyse_samples(x / loudness, rate)
+    return {"pitch": s["pitch"], "range": s["range"], "env": envelope(x, rate)}
+
+
+def take_value(take, name):
+    """One measurement of a live take: length, pitch, range, or rhythm (None for the reference take itself)."""
+    if name == "length":
+        return take["length"]
+    if name == "rhythm":
+        return None if take["reference"] else take["rhythm"]
+    return take["mic"][name] if take["mic"] else None
+
+
+def live_differences(takes, key):
+    """How takes of condition `key` differ from the takes after silence, beyond the spread between those."""
+    def values(k, name):
+        return [v for v in (take_value(t, name) for t in takes if t["key"] == k) if v is not None]
+    notes = []
+    a, b = values("A", "length"), values(key, "length")
+    if len(a) >= 2 and b:
+        d = statistics.mean(b) - statistics.mean(a)
+        if abs(d) > max(0.03 * statistics.mean(a), 2 * (max(a) - min(a))):
+            notes.append(f"length {d:+.2f}s")
+    a, b = values("A", "pitch"), values(key, "pitch")
+    if len(a) >= 2 and b:
+        d = 12 * math.log2(statistics.mean(b) / statistics.mean(a))
+        if abs(d) > max(0.5, 2 * 12 * math.log2(max(a) / min(a))):
+            notes.append(f"pitch {d:+.1f} st")
+    a, b = values("A", "range"), values(key, "range")
+    if len(a) >= 2 and b:
+        d = statistics.mean(b) - statistics.mean(a)
+        if abs(d) > max(1.0, 2 * (max(a) - min(a))):
+            notes.append(f"range {d:+.1f} st")
+    a, b = values("A", "rhythm"), values(key, "rhythm")    # A's: its repeats against the first
+    if a and b and statistics.mean(b) < min(a) - 0.1:
+        notes.append(f"rhythm {statistics.mean(b):.2f} against {min(a):.2f} for repeats after silence")
+    return notes
+
+
+def live_check(synth, times, voice, text, prosody, emphasis, quiet, repeats, out_dir, report, ask):
+    """Is the sentence spoken live any differently after silence, straight after another sentence, or straight
+    after a silent warm-up line? Each condition `repeats` times, interleaved, recorded through the microphone."""
+    try:
+        if importlib.util.find_spec("numpy") is None:
+            raise ImportError("the analysis needs numpy")
+        mic = Microphone()
+    except Exception as e:
+        mic = None
+        report(f"Microphone: not recording ({type(e).__name__}: {e}), so only the timing is measured: listen.")
+    sentence = build_ssml(text, prosody, emphasis)
+    before_ssml = {"B": build_ssml(PRIMING_PHRASE, prosody, emphasis),
+                   "C": build_ssml(PRIMING_PHRASE, {**prosody, "volume": "silent"})}
+    order = [(r, key, before) for r in range(1, repeats + 1) for key, before in LIVE_CONDITIONS]
+    print("Stay quiet while it runs: the microphone is recording. First a silent warm-up, as ORAC does at start-up.",
+          flush=True)
+    with objc.autorelease_pool():
+        speak_live(synth, times, make_utterance(build_ssml("Logic arrays online.", {"volume": "silent"}), voice, None))
+    takes = []
+    try:
+        for number, (r, key, before) in enumerate(order, 1):
+            name = f"{key}{r}"
+            print(f"  take {number}/{len(order)} ({name}): {f'{quiet:.0f} s of silence' if key == 'A' else before}, "
+                  "then the sentence", flush=True)
+            with objc.autorelease_pool():
+                if key == "A":
+                    time.sleep(quiet)
+                else:
+                    speak_live(synth, times, make_utterance(before_ssml[key], voice, None))
+                    time.sleep(0.1)             # ORAC's pause between sentences
+                t_call = time.perf_counter()
+                result = speak_live(synth, times, make_utterance(sentence, voice, None))
+            started = times.started or t_call
+            finished = times.finished or t_call + result["wall"]
+            take = {"name": name, "key": key, "before": before, "rhythm": None, "mic": None, "heard": "-",
+                    "reference": False, "length": finished - started if times.started and times.finished else None}
+            if mic:
+                time.sleep(0.4)                 # The end of the sentence reaching the microphone
+                x = mic.between(started, finished + 0.4)
+                mic.save(x, os.path.join(out_dir, f"live_{number:02d}_{name}.wav"))
+                take["mic"] = heard_by_mic(x, Microphone.RATE)
+            if ask:
+                take["heard"] = ask_heard(f"take {name}")
+            takes.append(take)
+    except KeyboardInterrupt:
+        synth.stopSpeakingAtBoundary_(0)            # AVSpeechBoundaryImmediate
+        report("\nStopped early (Ctrl+C): the takes so far are below.")
+    finally:
+        if mic:
+            mic.close()
+    if not takes:
+        return
+
+    reference = next((t for t in takes if t["key"] == "A" and t["mic"]), None)
+    if reference:
+        reference["reference"] = True
+    for t in takes:
+        if reference and t["mic"]:
+            t["rhythm"] = rhythm_match(reference["mic"]["env"], t["mic"]["env"])
+    measured = any(t["mic"] for t in takes)
+    report()
+    report(f"Live check: the sentence spoken live after {quiet:.0f} s of silence (A), straight after a sentence spoken")
+    report(f"aloud (B), and straight after a silent warm-up line (C), {repeats} times each"
+           + (", recorded through the microphone" if measured else ""))
+    report(f"  {'take':5} {'before it':26} {'length':>7} {'pitch':>6} {'range':>7} {'rhythm':>7}  heard")
+    for t in takes:
+        m = t["mic"]
+        pitch = "-" if not m or m["pitch"] is None else f"{m['pitch']:.0f}Hz"
+        report(f"  {t['name']:5} {t['before']:26} {fmt(t['length']):>7} {pitch:>6} "
+               f"{fmt(m['range'] if m else None, 'st', 1):>7} {fmt(t['rhythm'], '', 2):>7}  {t['heard']}")
+    report("length = the voice starting to finishing   pitch, range = median pitch and pitch variation as recorded")
+    report(f"rhythm = how closely the take's loudness follows {reference['name'] if reference else 'A1'}'s (1.00 = the same timing)")
+    if mic and not measured:
+        report("The microphone didn't hear the voice (headphones, or muted?): only the timing could be compared.")
+    report()
+    if len([t for t in takes if t["key"] == "A"]) < 2:
+        report("Too few takes after silence to judge: run at least two rounds (--rounds).")
+        return
+    found = {}
+    for key, before in LIVE_CONDITIONS[1:]:
+        if not any(t["key"] == key for t in takes):
+            report(f"  after {before + ':':26} not reached")
+            continue
+        found[key] = live_differences(takes, key)
+        same = "the same delivery" if measured else "the same timing"
+        verdict = f"DIFFERENT ({', '.join(found[key])})" if found[key] else same
+        report(f"  after {before + ':':26} {verdict}")
+    if len(found) < len(LIVE_CONDITIONS) - 1:
+        report("Stopped before every kind of take was done: run it to the end for a verdict.")
+    elif not measured and not found["B"] and not found["C"]:
+        report("Only the timing could be measured, and it doesn't change. Whether the tone does is down to your")
+        report("ears: compare the takes as you heard them, or run it again with a microphone that hears the voice.")
+    elif not found["B"] and not found["C"]:
+        report("The live voice says the sentence the same way whatever came just before it. It carries nothing")
+        report("from one sentence to the next, so a warm-up line, silent or spoken, can't change how a reply")
+        report("starts: the words decide.")
+    elif found["C"]:
+        report("A silent warm-up line just before changes the delivery: a warm-up before each reply, as ORAC's")
+        report("old idle warm-up did, would carry that over. Compare the takes by ear.")
+    else:
+        report("A sentence spoken aloud just before changes the delivery, but a silent warm-up line doesn't:")
+        report("the voice carries on from what it has actually spoken. Compare the takes by ear.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--text", default=DEFAULT_TEXT, help="sentence to speak, or SSML starting with <speak>")
@@ -954,8 +1317,8 @@ def main():
     ap.add_argument("--num-batch", type=int, help="batch size (default: orac_chat.py's OLLAMA_NUM_BATCH)")
     ap.add_argument("--llm", metavar="MODEL", help="stream a reply from this Ollama model during each round")
     ap.add_argument("--host", default="http://localhost:11434", help="Ollama URL")
-    ap.add_argument("--idle", type=float, default=90, help="seconds of silence before each round (default 90)")
-    ap.add_argument("--rounds", type=int, default=4)
+    ap.add_argument("--idle", type=float, help="seconds of silence before each round (default 90; --live-check 20)")
+    ap.add_argument("--rounds", type=int, help="rounds to run (default 4; --live-check 3)")
     ap.add_argument("--no-play", action="store_true", help="don't play the cold renders back")
     ap.add_argument("--no-ask", action="store_true", help="don't ask how each round sounded")
     ap.add_argument("--say", action="store_true",
@@ -965,6 +1328,14 @@ def main():
     ap.add_argument("--nap", action="store_true", help="allow App Nap (ORAC's behaviour before it opted out)")
     ap.add_argument("--voice-check", "--ssml-check", dest="ssml_check", action="store_true",
                     help="which SSML/utterance settings the voice obeys, and whether a phrase said first changes it")
+    ap.add_argument("--live-check", action="store_true",
+                    help="is a sentence spoken live any different after silence, after another sentence, or after a "
+                         "silent warm-up line? (records through the microphone; about three minutes)")
+    ap.add_argument("--from-log", nargs="?", const=os.path.join(ORAC_DIR, "ollama_debug.log"), metavar="FILE",
+                    help="measure what ORAC said (the 'Said' lines of ollama_debug.log, written in debug mode), "
+                         "rendered with the model idle; add --say to hear it again")
+    ap.add_argument("--sessions", type=int, default=1,
+                    help="with --from-log: how many of ORAC's latest start-ups to cover (default 1, 0 = all)")
     ap.add_argument("--log", metavar="FILE", help="where to save the results (default: a dated .txt next to this script)")
     args = ap.parse_args()
 
@@ -976,11 +1347,26 @@ def main():
         return
 
     text = open(args.ssml_file, encoding="utf-8").read() if args.ssml_file else args.text
-    if args.ssml_check and text.lstrip().startswith("<speak"):
-        sys.exit("--voice-check needs a plain sentence (it adds the SSML itself).")
+    if (args.ssml_check or args.live_check) and text.lstrip().startswith("<speak"):
+        sys.exit("--voice-check and --live-check need a plain sentence (they add the SSML themselves).")
+    if args.idle is None:
+        args.idle = 20 if args.live_check else 90
+    if args.rounds is None:
+        args.rounds = 3 if args.live_check else 4
 
-    label = "voice-check" if args.ssml_check else args.llm
-    if args.warm_up and not args.ssml_check:
+    runs = []
+    if args.from_log:
+        try:
+            runs = read_said(args.from_log, args.sessions)
+        except OSError as e:
+            sys.exit(f"Can't read {args.from_log}: {e}")
+        if not runs:
+            sys.exit(f"Nothing ORAC said is logged in {args.from_log}. In debug mode (DEBUG_START = True, or "
+                     "Option+D) ORAC logs each utterance as a 'Said' line.")
+
+    label = ("from-log" if args.from_log else "live-check" if args.live_check else "voice-check" if args.ssml_check
+             else args.llm)
+    if args.warm_up and not args.ssml_check and not args.from_log and not args.live_check:
         label = f"{label or 'voice-only'}_warm-up"
     log_path = args.log or default_log_path(label)
     if os.path.isdir(log_path):
@@ -1024,15 +1410,18 @@ def main():
         report("Note:    orac_chat.py has USE_PERSONAL_VOICE = False, so ORAC speaks with NSSpeechSynthesizer;"
                " this probe tests AVSpeechSynthesizer.")
     report(f"SSML:    {ssml_line}")
-    report(f"Text:    {spoken}")
-    if args.ssml_check:
+    if args.from_log:
+        report(f"Text:    what ORAC said, from {args.from_log} ({len(runs)} start-up{'s' if len(runs) > 1 else ''})")
+    else:
+        report(f"Text:    {spoken}")
+    if args.ssml_check or args.from_log or args.live_check:
         pass
     elif args.llm:
         report(f"LLM:     {args.llm} on Ollama {ollama_version(args.host)}  ("
                f"{marked('num_ctx', num_ctx, num_ctx_src)}, {marked('num_batch', num_batch, num_batch_src)})")
     else:
         report("LLM:     none (voice only)")
-    if not args.ssml_check and not args.say:
+    if not args.ssml_check and not args.say and not args.from_log and not args.live_check:
         report(f"Rounds:  {args.rounds}, each after {args.idle:.0f} s idle  ·  App Nap {'allowed' if args.nap else 'off'}")
     report("Settings are ORAC's own (orac_chat.py) unless marked.")
 
@@ -1046,6 +1435,35 @@ def main():
     synth = AVSpeechSynthesizer.alloc().init()
     times = SpeechTimes.alloc().init()
     synth.setDelegate_(times)
+    if args.live_check:
+        out_dir = tempfile.mkdtemp(prefix="orac_tts_probe_")
+        try:
+            live_check(synth, times, voice, spoken, {"rate": f"{rate}%", "pitch": pitch, "volume": volume}, emphasis,
+                       args.idle, max(1, args.rounds), out_dir, report, not args.no_ask and sys.stdin.isatty())
+        except KeyboardInterrupt:
+            synth.stopSpeakingAtBoundary_(0)        # AVSpeechBoundaryImmediate
+            report("\nStopped early (Ctrl+C).")
+        report()
+        if any(name.endswith(".wav") for name in os.listdir(out_dir)):
+            report(f"Recordings saved in {out_dir}")
+        report.save()
+        if report.path:
+            print(f"Results saved to {report.path}")
+        return
+    if args.from_log:
+        out_dir = tempfile.mkdtemp(prefix="orac_tts_probe_")
+        try:
+            log_check(synth, times, voice, {"rate": f"{rate}%", "pitch": pitch, "volume": volume}, emphasis, runs,
+                      out_dir, report, args.say)
+        except KeyboardInterrupt:
+            synth.stopSpeakingAtBoundary_(0)        # AVSpeechBoundaryImmediate
+            report("\nStopped early (Ctrl+C).")
+        report()
+        report(f"Renders saved in {out_dir}")
+        report.save()
+        if report.path:
+            print(f"Results saved to {report.path}")
+        return
     if args.say:
         speak_live(synth, times, make_utterance(text, voice, args.rate))
         return

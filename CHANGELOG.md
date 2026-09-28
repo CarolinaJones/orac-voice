@@ -5,6 +5,32 @@ and never pushed, so they are included under 1.9.3.
 
 ---
 
+## v1.9.4.1 (2026-09-28)
+
+Tools for tracking down the flat first sentence, and a few tweaks.
+
+### Voice diagnostics
+- **What ORAC said, in `ollama_debug.log`** (debug mode): a "Said" line for each utterance, with how
+  long it took and how long the voice had been quiet before it. Typed questions are logged too.
+- **`tts_probe.py --from-log`** renders each sentence ORAC said again, with the model idle, and measures
+  its pitch, pitch range and speaking rate. It then compares the first sentence of each reply with the
+  rest, to show whether a flat opening is in its words. `--say` replays the replies.
+- **`tts_probe.py --live-check`** speaks the same sentence live after silence, straight after another
+  sentence, and straight after a silent warm-up line. It records each take through the microphone, to
+  show whether the live voice carries anything over from one sentence to the next. Every earlier check
+  compared renders, which can't show that.
+
+### Tweaks
+- While the model loads, the status line reads "ACCESSING TARIAL MATRIX..." (LCD: "ACCESSING...").
+- The silent start-up warm-up line is now "I find your discourse, tedious."
+- The reboot announcement is spoken in two parts.
+- Reply temperature 0.90 (was 0.85).
+- The voice test settings (`MIN_FIRST_UTTERANCE_WORDS`, `SENTENCES_PER_UTTERANCE`,
+  `SPEAK_AFTER_GENERATION`, `VOICE_WARMUP`) have their own section; `MIN_FIRST_UTTERANCE_WORDS` is 0
+  (off).
+
+---
+
 ## v1.9.4 (2026-09-28)
 
 A performance, reliability and tidy-up release. You don't need to change any settings.
