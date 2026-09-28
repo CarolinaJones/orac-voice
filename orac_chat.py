@@ -89,9 +89,9 @@ USE_PERSONAL_VOICE = True							# Use The Apple Personal Voice
 VOICE = "ORAC Personal Voice" 						# Apple Personal Voice Name or Synth Voice Name
 
 SSML_RATE = 114            							# percent
-SSML_PITCH = "x-high"      							# x-low, low, medium, high, x-high, or "+10%"
+SSML_PITCH = "x-high"      							# x-low, low, medium, high, x-high, or "+10%" (a Personal Voice ignores this: tts_probe --voice-check)
 SSML_VOLUME = "loud"       							# silent, x-soft, soft, medium, loud, x-loud
-SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to omit the tag (emphasis on a whole sentence can flatten its intonation)
+SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to omit the tag (a Personal Voice ignores this too)
 
 MIN_FIRST_UTTERANCE_WORDS = 4						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
 SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
@@ -1121,9 +1121,15 @@ class MacTTS:
 
     def _warm_up(self):
         """ The voice's first live sentence stalls while it starts up (tts_probe: 7.9-8.1 s instead of 6.6 s,
-            and the first word lost with MLX), so one line is spoken silently while ORAC boots. """
+            and the first word lost with MLX), so one line is spoken silently while ORAC boots. Silent through
+            SSML: a Personal Voice still speaks aloud with the utterance's volume set to 0. """
         started = time.time()
-        self.synth.speakUtterance_(self._build_utterance("Logic arrays online.", volume=0.0))
+        utterance = AVSpeechUtterance.speechUtteranceWithSSMLRepresentation_(
+            '<speak><prosody volume="silent">Logic arrays online.</prosody></speak>')
+        if not utterance:
+            return
+        if self.personal_voice: utterance.setVoice_(self.personal_voice)
+        self.synth.speakUtterance_(utterance)
         seen_speaking = False
         while state.running and time.time() - started < 10:
             if self.synth.isSpeaking():

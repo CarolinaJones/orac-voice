@@ -9,6 +9,7 @@ a cold voice, contention with the LLM and real-time starvation apart. Quit ORAC 
     python3 extras/tts_probe.py --llm gemma4:12b          # same with the GGUF model, to compare
     python3 extras/tts_probe.py --menu                    # choose the voice from a list first
     python3 extras/tts_probe.py --voice-check             # which settings does the voice obey? does context matter?
+    python3 extras/tts_probe.py --say --text "Irrelevant!"  # hear one sentence with ORAC's settings
 
 Voice: set VOICE below, pass --voice "ORAC Personal Voice", or pick from a list with --menu. With
 none of these, the probe uses ORAC's own VOICE from orac_chat.py, by ORAC's rule: the voice with
@@ -605,34 +606,83 @@ SSML_CHECKS = [
     ("SSML volume x-soft",   "SSML volume",     {"ssml": {"volume": "x-soft"}}),
     ("SSML volume x-loud",   "SSML volume",     {"ssml": {"volume": "x-loud"}}),
     ("SSML emphasis strong", "SSML emphasis",   {"ssml": {}, "emphasis": "strong"}),
+    ("SSML break 600ms",     "SSML break",      {"ssml": {}, "break": "600ms"}),
     ("pitchMultiplier 0.5",  "pitchMultiplier", {"pitch_multiplier": 0.5}),
     ("pitchMultiplier 2.0",  "pitchMultiplier", {"pitch_multiplier": 2.0}),
     ("rate 0.35",            "utterance rate",  {"rate": 0.35}),
     ("rate 0.65",            "utterance rate",  {"rate": 0.65}),
 ]
+SETTLE_SECONDS = 8      # The voice's first renders can come out slightly differently; later ones repeat exactly
+
+
+def check_utterance(text, voice, how):
+    """The utterance for one SSML_CHECKS entry."""
+    if "ssml" not in how:
+        utterance = make_utterance(text, voice, how.get("rate"))
+        if "pitch_multiplier" in how:
+            utterance.setPitchMultiplier_(how["pitch_multiplier"])
+        return utterance
+    ssml = build_ssml(text, how["ssml"], how.get("emphasis", ""))
+    split = re.search(r"[.!?]\s+", text)
+    if "break" in how and split:            # A pause after the first sentence
+        first, rest = build_ssml(text[:split.end()].strip()), build_ssml(text[split.end():])
+        ssml = f'<speak>{first[7:-8]}<break time="{how["break"]}"/>{rest[7:-8]}</speak>'
+    return make_utterance(ssml, voice, None)
+
+
+def render_to(synth, utterance, path):
+    """Renders to `path`: (sample rate, layout, raw bytes), or None if the voice produced no audio."""
+    with objc.autorelease_pool():
+        rendered = render(synth, utterance, path)
+    return read_caf(path) if rendered["audio"] and os.path.exists(path) else None
+
+
+def startup_note(first, later_raw):
+    """How the voice's very first render differs from the same render once it has settled."""
+    rate, layout, raw = first
+    if raw == later_raw:
+        return "identical: the voice needed no settling"
+    flags, channels, bits = layout
+    length = (len(raw) - len(later_raw)) // (bits // 8) // channels / rate
+    a, b = samples_of(layout, raw), samples_of(layout, later_raw)
+    if a is None:
+        return f"different (length {length:+.2f}s)"
+    import numpy as np
+    n = min(len(a), len(b))
+    big = np.nonzero(np.abs(a[:n] - b[:n]) > 1e-3)[0]
+    k = int(big[0]) if len(big) else n
+    if k < rate * 0.05:
+        return f"different from the start (length {length:+.2f}s)"
+    noise = np.sqrt(np.mean((a[:k] - b[:k]) ** 2)) / max(np.sqrt(np.mean(b[:k] ** 2)), 1e-12)
+    faint = f" (differences {20 * math.log10(noise):.0f} dB below it, inaudible)" if noise > 1e-9 else ""
+    ending = f", then it differs (length {length:+.2f}s)" if k < n or length else ""
+    return f"the same sound until {k / rate:.2f}s{faint}{ending}"
 
 
 def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report):
     """Renders `text` once per setting and reports which settings change the audio."""
+    print(f"  letting the voice settle ({SETTLE_SECONDS} s)", flush=True)
+    started, first = time.perf_counter(), None
+    while time.perf_counter() - started < SETTLE_SECONDS:
+        rendered = render_to(synth, check_utterance(text, voice, {}),
+                             os.path.join(out_dir, "00_first_render.caf" if first is None else "00_settling.caf"))
+        if rendered is None:
+            report("The voice produced no audio: it may not support offline rendering.")
+            return None
+        first = first or rendered
+
     checks = list(SSML_CHECKS) + [("ORAC's SSML", None, {"ssml": orac_prosody, "emphasis": orac_emphasis})]
     if orac_emphasis:
         checks.append(("ORAC's SSML, no emphasis", None, {"ssml": orac_prosody}))
     results = {}
     for number, (label, control, how) in enumerate(checks, 1):
         print(f"  rendering {number}/{len(checks)}: {label}", flush=True)
-        if "ssml" in how:
-            utterance = make_utterance(build_ssml(text, how["ssml"], how.get("emphasis", "")), voice, None)
-        else:
-            utterance = make_utterance(text, voice, how.get("rate"))
-            if "pitch_multiplier" in how:
-                utterance.setPitchMultiplier_(how["pitch_multiplier"])
         path = os.path.join(out_dir, f"{number:02d}_{re.sub(r'[^A-Za-z0-9.%-]+', '_', label)}.caf")
-        with objc.autorelease_pool():
-            rendered = render(synth, utterance, path)
-        if not rendered["audio"] or not os.path.exists(path):
-            report(f"The voice produced no audio for {label!r}: it may not support offline rendering.")
-            return
-        rate, layout, raw = read_caf(path)
+        rendered = render_to(synth, check_utterance(text, voice, how), path)
+        if rendered is None:
+            report(f"The voice produced no audio for {label!r}.")
+            return None
+        rate, layout, raw = rendered
         results[label] = {"control": control, "ssml": "ssml" in how, "raw": raw, **analyse(rate, layout, raw)}
 
     def compare(row, base):
@@ -648,6 +698,8 @@ def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
         return ", ".join(notes) or "different audio, same length, pitch and level"
 
     plain, ssml = results["plain text"], results["SSML, no settings"]
+    report()
+    report(f"Start-up: the voice's very first render vs the same render once settled: {startup_note(first, plain['raw'])}")
     report()
     report("SSML check: the same sentence rendered with one setting changed at a time")
     report(f"{'render':26} {'length':>7} {'speech':>7} {'pitch':>7} {'range':>6} {'level':>7}  compared with its baseline")
@@ -665,9 +717,15 @@ def ssml_check(synth, voice, text, orac_prosody, orac_emphasis, out_dir, report)
     for control in dict.fromkeys(row["control"] for row in results.values() if row["control"]):
         rows = {label: row for label, row in results.items() if row["control"] == control}
         base = ssml if control.startswith("SSML") else plain
-        obeyed = [label for label, row in rows.items() if row["raw"] != base["raw"]]
-        verdict = "obeyed" if len(obeyed) == len(rows) else "partly obeyed" if obeyed else "IGNORED"
-        report(f"  {control:16} {verdict:14} ({'; '.join(f'{label}: {compare(row, base)}' for label, row in rows.items())})")
+        raws = [row["raw"] for row in rows.values()]
+        if len(raws) > 1:           # Opposite values that give the same audio: ignored
+            ignored = all(raw == raws[0] for raw in raws)
+            detail = "both values give identical audio" if ignored else \
+                "; ".join(f"{label}: {compare(row, base)}" for label, row in rows.items())
+        else:
+            ignored = raws[0] == base["raw"]
+            detail = "; ".join(f"{label}: {compare(row, base)}" for label, row in rows.items())
+        report(f"  {control:16} {'IGNORED' if ignored else 'obeyed':8} ({detail})")
     report()
     report("length = the whole render, speech = first to last sound, pitch = median voice pitch,")
     report("range = pitch variation in semitones (10th to 90th percentile; lower = flatter), level = loudness")
@@ -679,51 +737,52 @@ PRIMING_PHRASE = "I find your discourse irritatingly tedious."      # ORAC's old
 
 def context_check(synth, times, voice, text, prosody, emphasis, baseline_raw, out_dir, report):
     """Does anything said before the sentence change how the voice speaks it? Compares against the
-    sentence rendered on its own (baseline_raw), which is byte-for-byte repeatable."""
+    sentence rendered on its own (baseline_raw), which is byte-for-byte repeatable once settled."""
     sentence = build_ssml(text, prosody, emphasis)
     phrase = build_ssml(PRIMING_PHRASE, prosody, emphasis)
+    silent_phrase = build_ssml(PRIMING_PHRASE, {**prosody, "volume": "silent"})
 
-    def render_file(ssml, name):
-        utterance = make_utterance(ssml, voice, None)
-        path = os.path.join(out_dir, name)
-        with objc.autorelease_pool():
-            render(synth, utterance, path)
-        return read_caf(path)
+    def sentence_after(name):
+        return render_to(synth, make_utterance(sentence, voice, None), os.path.join(out_dir, name))
 
-    print("  context 1/3: the phrase rendered, then the sentence", flush=True)
-    render_file(phrase, "c1_phrase.caf")
-    after_rendered = render_file(sentence, "c2_sentence_after_the_phrase_rendered.caf")
-    print("  context 2/3: the phrase spoken silently, then the sentence", flush=True)
-    silent = make_utterance(phrase, voice, None)
-    silent.setVolume_(0.0)                  # As ORAC's old warm-up did
+    print("  context 1/4: the phrase rendered, then the sentence", flush=True)
+    render_to(synth, make_utterance(phrase, voice, None), os.path.join(out_dir, "c1_phrase.caf"))
+    after = [("phrase rendered first", sentence_after("c2_sentence_after_the_phrase_rendered.caf"))]
+    print("  context 2/4: the phrase spoken aloud (you'll hear it), then the sentence", flush=True)
     with objc.autorelease_pool():
-        speak_live(synth, times, silent)
-    after_spoken = render_file(sentence, "c3_sentence_after_the_phrase_spoken_silently.caf")
-    print("  context 3/3: the phrase as a silent lead-in to the sentence", flush=True)
-    lead_in = ("<speak>" + build_ssml(PRIMING_PHRASE, {"volume": "silent"})[7:-8]
-               + sentence[7:-8] + "</speak>")
-    rate, layout, lead_raw = render_file(lead_in, "c4_phrase_as_silent_lead-in.caf")
+        speak_live(synth, times, make_utterance(phrase, voice, None))
+    after.append(("phrase spoken aloud first", sentence_after("c3_sentence_after_the_phrase_spoken_aloud.caf")))
+    print("  context 3/4: the phrase spoken silently, then the sentence", flush=True)
+    with objc.autorelease_pool():
+        speak_live(synth, times, make_utterance(silent_phrase, voice, None))
+    after.append(("phrase spoken silently first (the old warm-up)",
+                  sentence_after("c4_sentence_after_the_phrase_spoken_silently.caf")))
+    print("  context 4/4: the phrase as a silent lead-in to the sentence", flush=True)
+    lead_in = "<speak>" + build_ssml(PRIMING_PHRASE, {"volume": "silent"})[7:-8] + sentence[7:-8] + "</speak>"
+    lead = render_to(synth, make_utterance(lead_in, voice, None), os.path.join(out_dir, "c5_phrase_as_silent_lead-in.caf"))
+    if lead is None or any(rendered is None for _, rendered in after):
+        report("The voice produced no audio for part of the context check.")
+        return
 
     report()
     report(f"Context check: does saying \"{PRIMING_PHRASE}\" first change the sentence?")
     same_after = []
-    for label, (_, _, raw) in (("phrase rendered first, then the sentence", after_rendered),
-                               ("phrase spoken silently first (like the old warm-up)", after_spoken)):
-        same = raw == baseline_raw
-        same_after.append(same)
-        report(f"  {label:54} {'identical to the sentence alone' if same else 'DIFFERENT from the sentence alone'}")
+    for label, (_, _, raw) in after:
+        same_after.append(raw == baseline_raw)
+        report(f"  {label:50} {'identical to the sentence alone' if raw == baseline_raw else 'DIFFERENT from the sentence alone'}")
 
+    rate, layout, lead_raw = lead
     base, lead = samples_of(layout, baseline_raw), samples_of(layout, lead_raw)
     label = "phrase as a silent lead-in, in the same utterance"
     lead_verdict = None
     if base is None:
-        report(f"  {label:54} needs numpy to compare")
+        report(f"  {label:50} needs numpy to compare")
     else:
         import numpy as np
         onset_base, onset_lead = (int(np.argmax(np.abs(x) > 0.01)) for x in (base, lead))
         silence = (onset_lead - onset_base) / rate
         if silence < 0.3 and abs(len(lead) - len(base)) / rate > 0.3:
-            report(f"  {label:54} the lead-in was spoken aloud: the voice ignores volume=\"silent\"")
+            report(f"  {label:50} the lead-in was spoken aloud: the voice ignores volume=\"silent\"")
         else:
             pad = min(int(0.01 * rate), onset_base, onset_lead)     # Same lead-up before both onsets
             a, b = base[onset_base - pad:], lead[onset_lead - pad:]
@@ -732,7 +791,7 @@ def context_check(synth, times, voice, text, prosody, emphasis, baseline_raw, ou
             if same:
                 lead_verdict = False
                 opening = f"{silence:.2f}s of silence, then" if silence >= 0.3 else "the lead-in was left out:"
-                report(f"  {label:54} {opening} the sentence identical to it alone")
+                report(f"  {label:50} {opening} the sentence identical to it alone")
             else:
                 x, y = analyse_samples(a, rate), analyse_samples(b, rate)
                 length = y["length"] - x["length"]
@@ -744,17 +803,16 @@ def context_check(synth, times, voice, text, prosody, emphasis, baseline_raw, ou
                 lead_verdict = (abs(length) >= 0.03 * x["length"] or abs(pitch) >= 0.5 or abs(spread) >= 1.0
                                 or abs(level) >= 1.0)
                 change = "CHANGED" if lead_verdict else "slightly different samples, same delivery"
-                report(f"  {label:54} {silence:.2f}s of silence, then the sentence {change} ({notes})")
+                report(f"  {label:50} {silence:.2f}s of silence, then the sentence {change} ({notes})")
     report()
     if all(same_after):
-        report("A separate phrase before the sentence doesn't change it at all: the voice carries nothing from")
-        report("one utterance to the next, so a warm-up phrase can't set its mood. The old warm-up can only have")
-        report("helped by waking the voice (loading it back into memory) before the first real sentence.")
+        report("A separate phrase before the sentence, rendered or spoken, doesn't change it at all: the voice")
+        report("carries nothing from one utterance to the next, so a warm-up phrase can't set its mood.")
     else:
         report("A phrase said before the sentence DOES change it: the voice carries context between utterances.")
-        report("Compare c2/c3 with the ORAC's SSML render by ear.")
+        report("Compare c2-c4 with the ORAC's SSML render by ear.")
     if lead_verdict is True:
-        report("Context inside the same utterance changes the sentence: compare c4 (after its silence) with the")
+        report("Context inside the same utterance changes the sentence: compare c5 (after its silence) with the")
         report("ORAC's SSML render by ear.")
     elif lead_verdict is False:
         report("Context inside the same utterance doesn't change it either.")
@@ -782,6 +840,8 @@ def main():
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--no-play", action="store_true", help="don't play the cold renders back")
     ap.add_argument("--no-ask", action="store_true", help="don't ask how each round sounded")
+    ap.add_argument("--say", action="store_true",
+                    help="just speak --text once with ORAC's settings (to try wording, punctuation or rate by ear)")
     ap.add_argument("--warm-up", action="store_true",
                     help="speak one line silently before round 1, as ORAC does at start-up (VOICE_WARMUP)")
     ap.add_argument("--nap", action="store_true", help="allow App Nap (ORAC's behaviour before it opted out)")
@@ -854,7 +914,7 @@ def main():
                f"{marked('num_ctx', num_ctx, num_ctx_src)}, {marked('num_batch', num_batch, num_batch_src)})")
     else:
         report("LLM:     none (voice only)")
-    if not args.ssml_check:
+    if not args.ssml_check and not args.say:
         report(f"Rounds:  {args.rounds}, each after {args.idle:.0f} s idle  ·  App Nap {'allowed' if args.nap else 'off'}")
     report("Settings are ORAC's own (orac_chat.py) unless marked.")
 
@@ -868,6 +928,9 @@ def main():
     synth = AVSpeechSynthesizer.alloc().init()
     times = SpeechTimes.alloc().init()
     synth.setDelegate_(times)
+    if args.say:
+        speak_live(synth, times, make_utterance(text, voice, args.rate))
+        return
     out_dir = tempfile.mkdtemp(prefix="orac_tts_probe_")
     if args.ssml_check:
         prosody = {"rate": f"{rate}%", "pitch": pitch, "volume": volume}
@@ -888,11 +951,9 @@ def main():
     system_prompt = orac_system_prompt() if args.llm else None
     ask = not args.no_ask and sys.stdin.isatty()
     rows, load = [], None
-    if args.warm_up:
-        line = "Logic arrays online."           # ORAC's start-up line
-        utterance = make_utterance(line if args.plain else orac_ssml(line, rate, pitch, volume, emphasis), voice, args.rate)
-        utterance.setVolume_(0.0)
-        warm = speak_live(synth, times, utterance)
+    if args.warm_up:                        # As ORAC's VOICE_WARMUP: silent through SSML, as utterance volume 0
+        line = "Logic arrays online."       # isn't silent with a Personal Voice
+        warm = speak_live(synth, times, make_utterance(build_ssml(line, {"volume": "silent"}), voice, None))
         report(f"Warm-up: {line!r} spoken silently before round 1 (took {warm['wall']:.2f}s)")
 
     try:

@@ -34,7 +34,7 @@ A performance, reliability and tidy-up release. You don't need to change any set
 - **Fixed:** "I'm" and "I'd" were spoken as "I, m" and "I, d" because of the pause added after
   "I".
 - **Voice warm-up at start-up (`VOICE_WARMUP`, on by default).** One line is spoken silently while
-  ORAC boots. In `tts_probe`, the voice's first live sentence took 7.9 to 8.1 s instead of 6.6 s (and
+  ORAC boots (silent through SSML: a Personal Voice still speaks aloud with the utterance volume at 0). In `tts_probe`, the voice's first live sentence took 7.9 to 8.1 s instead of 6.6 s (and
   lost its first word with MLX), with either model; that start-up cost now happens during boot
   instead of in the first reply. The probe's `--warm-up` option measures the difference.
 - **Exact voice name wins.** With several Personal Voices, `VOICE = "ORAC Personal Voice"` could
@@ -47,9 +47,13 @@ A performance, reliability and tidy-up release. You don't need to change any set
   - After each round it asks how the speech sounded, and saves the settings and results table to
     a text file next to the script.
   - `--voice-check` (or `--ssml-check`) renders the sentence once per setting (SSML rate, pitch,
-    volume and emphasis, and the utterance's rate and pitch multiplier) and reports which ones
-    change the audio. It also tests whether a phrase said first (the old warm-up line) changes how
-    the sentence is spoken.
+    volume, emphasis and break, and the utterance's rate and pitch multiplier) and reports which
+    ones change the audio. It also tests whether a phrase said first (the old warm-up line) changes
+    how the sentence is spoken, and how the voice's very first render differs once it settles.
+  - `--say --text "..."` speaks one sentence with ORAC's settings, to try wording by ear.
+- **Measured with the probe:** a Personal Voice ignores SSML pitch, SSML emphasis and the pitch
+  multiplier (the renders are byte-identical), and obeys rate, volume and pauses. The settings'
+  comments now say so.
 
 ### Commands and archive
 - **Whole-utterance commands.** Power-off, reboot, networking and "clear history" now only run
