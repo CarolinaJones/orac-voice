@@ -190,7 +190,7 @@ def machine_info():
 
 def orac_settings():
     """Plain settings from orac_chat.py, read rather than run, so the probe matches ORAC by default."""
-    wanted = set(FALLBACK) | {"VOICE", "USE_PERSONAL_VOICE"}
+    wanted = set(FALLBACK) | {"VOICE", "USE_PERSONAL_VOICE", "DEBUG_START"}
     found = {}
     try:
         with open(os.path.join(ORAC_DIR, "orac_chat.py"), encoding="utf-8") as f:
@@ -1001,6 +1001,36 @@ def read_said(path, sessions):
     return runs[-sessions:] if sessions > 0 else runs
 
 
+def why_nothing_said(path, orac):
+    """What to do when the debug log has no "Said" lines, as far as the probe can tell."""
+    code_path = os.path.join(ORAC_DIR, "orac_chat.py")
+    try:
+        with open(code_path, encoding="utf-8") as f:
+            logs_speech = 'debug_log(f"Said' in f.read()
+    except OSError:
+        logs_speech = True                  # Can't tell
+    if not logs_speech:
+        return "The orac_chat.py next to this probe doesn't log what ORAC says yet: pull the latest wip first."
+    if orac.get("DEBUG_START") is False:
+        return ("DEBUG_START is False in orac_chat.py, so ORAC doesn't log what it says: set it to True (or press "
+                "Option+D while ORAC runs), talk to ORAC, quit, then run this again.")
+    with open(path, encoding="utf-8", errors="replace") as f:
+        starts = [line[:19] for line in f if BOOT_LINE.search(line)]
+    if not starts:
+        return ("There's no ORAC start-up in this log. ORAC writes ollama_debug.log next to the orac_chat.py it runs "
+                "from; if that's another folder, give its log: --from-log /path/to/ollama_debug.log")
+    try:
+        started = datetime.strptime(starts[-1], "%Y-%m-%d %H:%M:%S")
+        updated = datetime.fromtimestamp(os.path.getmtime(code_path))
+        if started < updated:
+            return (f"ORAC last started at {started:%H:%M} on {started:%d %b}, before orac_chat.py was updated "
+                    f"({updated:%H:%M}): run ORAC, talk to it, quit, then run this again.")
+    except (OSError, ValueError):
+        pass
+    return (f"ORAC's last run (started {starts[-1][11:16]}) logged nothing it said: was debug mode on? Talk to ORAC "
+            "with DEBUG_START = True (or Option+D), quit, then run this again.")
+
+
 def first_vs_rest(firsts, rest, report):
     """Medians for the first utterance of each reply and for the others, and whether the first are flatter."""
     def medians(group):
@@ -1361,8 +1391,7 @@ def main():
         except OSError as e:
             sys.exit(f"Can't read {args.from_log}: {e}")
         if not runs:
-            sys.exit(f"Nothing ORAC said is logged in {args.from_log}. In debug mode (DEBUG_START = True, or "
-                     "Option+D) ORAC logs each utterance as a 'Said' line.")
+            sys.exit(f"Nothing ORAC said is logged in {args.from_log}.\n{why_nothing_said(args.from_log, orac_settings())}")
 
     label = ("from-log" if args.from_log else "live-check" if args.live_check else "voice-check" if args.ssml_check
              else args.llm)
