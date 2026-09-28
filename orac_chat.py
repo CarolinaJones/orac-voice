@@ -2678,6 +2678,17 @@ def start_response(user_text, tts, teletype):
     state.stream_epoch = time.time()
     threading.Thread(target=stream_ai_response, args=(user_text, tts, teletype, state.stream_epoch), daemon=True).start()
 
+def exit_from_keyboard(tts, teletype):
+    """ Ctrl+C: runs the normal shutdown sequence (save prompt, or auto-save when headless) here in the
+        keyboard thread, then ends the process once cleanup has run. Pressing C at the prompt carries on. """
+    state.input_buffer = ""
+    trigger_barge_in(tts, teletype)             # Stop any reply in progress first
+    try:
+        shutdown_sequence(tts)                  # Returns False if the user pressed C
+    except SystemExit:
+        cleanup_processes()
+        os._exit(0)                             # sys.exit() would only end this thread; the main loop may be mid-listen
+
 def keyboard_listener(tts, teletype):
     """ Restarts the listener if it ever dies. """
     while state.running:
@@ -2716,6 +2727,13 @@ def _keyboard_listener_impl(tts, teletype):
                         chunk = chunk[:_tail.start()]
                     if not chunk:
                         continue
+
+                # Ctrl+C closes ORAC cleanly in every state: key removed, headless, mid-reply, or while the
+                # main loop is still listening. Queued for the main loop instead, it was ignored while locked
+                # and could wait ~10s for a listen to finish.
+                if '\x03' in chunk:
+                    exit_from_keyboard(tts, teletype)
+                    continue
 
                 if USE_ACTIVATOR and not state.key_inserted:
                     time.sleep(0.1)
@@ -2787,10 +2805,6 @@ def _keyboard_listener_impl(tts, teletype):
                         state.input_buffer = ""
                         if not state.is_shutdown.is_set(): render_input_box()
                         trigger_barge_in(tts, teletype)
-                    elif char == '\x03':
-                        state.input_queue.put(SHUTDOWN_CMD[0])
-                        state.input_buffer = ""
-                        if not state.is_shutdown.is_set(): render_input_box()
                     elif char in ('\r', '\n'):
                         if state.input_buffer.strip():
                             state.input_queue.put(state.input_buffer.strip())
@@ -2911,6 +2925,11 @@ def run_local_bot():
                         set_status("● TEXT-ONLY MODE ENGAGED", A)
 
                 while state.running:
+                    # A Ctrl+C shutdown (save prompt) is running in the keyboard thread: don't listen or reply meanwhile
+                    if state.is_shutdown.is_set():
+                        time.sleep(0.1)
+                        continue
+
                     # Completely freeze the loop if the activator key is removed
                     if USE_ACTIVATOR and not state.key_inserted:
                         time.sleep(0.5)
@@ -2970,7 +2989,7 @@ def run_local_bot():
                         listen_started = time.time()
                         audio = recognizer.listen(source, phrase_time_limit=10, timeout=1.5)
                         state.is_listening.clear()
-                        if state.is_speaking.is_set() or state.is_processing.is_set() or not tts.is_idle():
+                        if state.is_shutdown.is_set() or state.is_speaking.is_set() or state.is_processing.is_set() or not tts.is_idle():
                             continue
                         if state.tts_last_active >= listen_started:
                             continue
@@ -3052,6 +3071,8 @@ def run_local_bot():
 if __name__ == "__main__":
     try:
         run_local_bot()
+    except KeyboardInterrupt:
+        pass                                    # SIGINT before the keyboard thread took over Ctrl+C: just clean up
     except Exception as e:
         cleanup_processes()
         sys.stdout.write(f"\n{R}{FL}●{NOFL} CRITICAL ERROR ON STARTUP: {e}{RESET}\n")
