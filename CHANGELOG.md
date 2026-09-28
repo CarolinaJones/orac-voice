@@ -32,7 +32,11 @@ A performance, reliability and tidy-up release. You don't need to change any set
 - **Fixed:** with `DEBUG_START = True`, the header's stats line started dimmed, as if debug were off.
 - **What Whisper heard, in `ollama_debug.log`** (debug mode): each transcription with Whisper's
   confidence (no-speech probability, log-probability), including those dropped as likely
-  hallucinations, such as a short "Thank you".
+  hallucinations.
+- **A real "Thank you" gets an answer.** A short "Thank you" was always dropped as a Whisper
+  hallucination, even when said to ORAC. It's now dropped only when Whisper wasn't sure it heard
+  speech (no-speech probability 0.1 or more; real speech logs 0.00). "Thanks for watching",
+  "Thank you for watching" and a lone "you" or "um" are still always dropped.
 - **Whisper warm-up at start-up.** Whisper loaded its model on the first thing said (3.7 s instead of
   under a second); one second of silence is now transcribed while ORAC boots.
 - **Gemma 3 stop strings removed.** Gemma 4 uses different turn markers. A stop list sent with the

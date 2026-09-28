@@ -207,7 +207,9 @@ if not os.path.isfile(os.path.join(WHISPER_MODEL, "config.json")):
 SPLIT_REGEX = re.compile(r'(?<!\bMr)(?<!\bDr)(?<!\bMrs)(?<!\bMs)(?<!\bCapt)(?<!\bCmdr)(?<!\bGen)(?<!\bProf)[.!?]+[\]}"\’”]?\s+(?!\d)')
 ansi_escape = re.compile(r'\x1b(?:\[[0-9;]*[A-Za-z~]|O[A-Za-z])')
 SHORT_QUERY_OK = {"why", "how", "who", "zen", "gan", "ai"}   # Prompts of 3 letters or fewer that still count as questions
-HALLUCINATION_REGEX = re.compile(r'(?i)(thank you|thanks for watching|subscribe|amara\.org|by mooji|subtitles by|\[silence\]|\[music\]|\(sigh\)|^[ \t]*(oh|you|ah|um|uh)\.?[ \t]*$)')
+HALLUCINATION_REGEX = re.compile(r'(?i)(thank(s| you) for watching|subscribe|amara\.org|by mooji|subtitles by|\[silence\]|\[music\]|\(sigh\)|^[ \t]*(oh|you|ah|um|uh)\.?[ \t]*$)')
+THANK_YOU_REGEX = re.compile(r'(?i)thank you')     # Whisper invents it from noise, but people say it too
+WHISPER_UNSURE = 0.1                    # Whisper's no-speech probability from which a "thank you" counts as invented (real speech logs 0.00)
 
 # C O M M A N D  P H R A S E S #
 
@@ -1477,9 +1479,12 @@ def sanitize_for_tts(text):
     text = TTS_NAME_FIX.sub(r' \1.', text)   
     return text.strip()
 
-def is_hallucination(text):
-    if len(text) < 30 and HALLUCINATION_REGEX.search(text.lower()): return True
-    return False
+def is_hallucination(text, no_speech=1.0):
+    """ Short phrases Whisper invents from noise. A "thank you" is only dropped when Whisper wasn't sure it heard
+        speech: a real "Thank you, ORAC." logs a no-speech probability of 0.00. """
+    if len(text) >= 30: return False
+    if HALLUCINATION_REGEX.search(text): return True
+    return THANK_YOU_REGEX.search(text) is not None and no_speech >= WHISPER_UNSURE
 
 # T I M E R S  &  A L A R M S #
 
@@ -3027,13 +3032,18 @@ def transcribe(audio):
             no_speech_threshold=0.6,
         )
 
+def whisper_no_speech(result):
+    """ The highest no-speech probability among a transcription's segments (1.0 if there are none). """
+    segments = result.get("segments") or []
+    return max((seg.get('no_speech_prob', 0.0) for seg in segments), default=1.0)
+
 def whisper_confidence(result):
     """ Whisper's own confidence in a transcription: the highest no-speech probability and the lowest
         average log-probability of its segments. """
     segments = result.get("segments") or []
     if not segments:
         return "no segments"
-    return (f"no-speech {max(seg.get('no_speech_prob', 0.0) for seg in segments):.2f}, "
+    return (f"no-speech {whisper_no_speech(result):.2f}, "
             f"logprob {min(seg.get('avg_logprob', 0.0) for seg in segments):.2f}")
 
 def warm_up_whisper():
@@ -3213,6 +3223,7 @@ def run_local_bot():
                         
                         user_text = result['text'].strip()
                         heard = f"Heard {user_text!r} ({whisper_confidence(result)})"
+                        no_speech = whisper_no_speech(result)
 
                         threading.Timer(0.4, lambda: mx.clear_cache()).start() # Seems to work better with the timer!
                         
@@ -3226,7 +3237,7 @@ def run_local_bot():
                         del audio_float32
                         del result 
 
-                        if len(user_text) < 2 or is_hallucination(user_text):
+                        if len(user_text) < 2 or is_hallucination(user_text, no_speech):
                             if user_text: debug_log(f"{heard}: ignored as a likely Whisper hallucination")
                             continue
                         debug_log(heard)
