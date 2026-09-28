@@ -23,9 +23,6 @@ Tools for tracking down the flat first sentence, and a few tweaks.
   voice. It only claims what it could measure. The takes come in shuffled order, and silence and the
   silent line sound the same until the sentence starts, so they can be rated blind.
 - **`--from-log`** compares first sentences with the rest only within replies of two sentences or more.
-- **What they found** (in the manual's known limitations): the voice speaks the same words the same way
-  every time, live as well as rendered, whatever came just before (pitch within 3 Hz, word timing within
-  11 ms). How lively a sentence sounds comes from its words and punctuation.
 
 ### Tweaks
 - While the model loads, the status line reads "ACCESSING TARIAL MATRIX..." (LCD: "ACCESSING...").

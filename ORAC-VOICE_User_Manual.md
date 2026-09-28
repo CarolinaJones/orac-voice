@@ -117,7 +117,7 @@ These are set at the top of `orac_chat.py`.
 
 ## 6. Known Limitations
 
-- **Tone follows the words**: ORAC's Personal Voice speaks the same words the same way every time, whatever the model, the settings, or what was said just before (measured with `extras/tts_probe.py`, live and rendered). It ignores SSML pitch and emphasis, so how lively a sentence sounds comes from its wording and punctuation: a plain, informative sentence can sound flat, especially straight after a cutting one. To hear how a change of wording or punctuation sounds: `python3 extras/tts_probe.py --say --text "..."`.
+- **Flat first sentence**: sometimes the first sentence of a reply sounds flat while the rest sound as they should, with `gemma4:12b` as well as `gemma4:12b-mlx`. `extras/tts_probe.py` helps track it down: `--from-log` measures and replays what ORAC said, and `--live-check` tests whether the voice carries anything over from one sentence to the next.
 
 ---
 
