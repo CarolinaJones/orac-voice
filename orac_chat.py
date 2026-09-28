@@ -82,6 +82,7 @@ TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 #==================================================================================================#
 		
 OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
+OLLAMA_KEEP_ALIVE = 14400							# Seconds the model stays resident between requests (4h)
 
 MODEL_MAX_TOKENS = 10240							# MAX TOKENS for STATUS Predict & NUM_CTX
 CHARS_PER_TOKEN = 4.18								# For UI Health Bar estimation fallback
@@ -244,6 +245,11 @@ except Exception as e:
     NUM_KEEP = int(len(SYSTEM_INSTRUCTION) / CHARS_PER_TOKEN) + 10
     SYS_TOKENS_LEN = NUM_KEEP
     tokenizer_mode = "ESTIMATED"
+
+# Runner options MUST be identical on every request: Ollama reloads the model (cold load plus a
+# full re-prefill of the system prompt) whenever num_ctx or num_batch differ from the last call.
+LLM_RUNNER_OPTIONS = {'num_ctx': MODEL_MAX_TOKENS, 'num_batch': 256, 'num_keep': SYS_TOKENS_LEN}
+FIRST_TURN_TAG = "[SUBJECT: USER][PERSPECTIVE: 2nd-Person]\n"
 
 #==================================================================================================#
 #     								APPLICATION STATE & CLEANUP                                    #
@@ -999,15 +1005,19 @@ def is_hallucination(text):
     if len(text) < 30 and HALLUCINATION_REGEX.search(text.lower()): return True
     return False
 
+WORD_TO_NUM = {
+    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30,
+    "forty": 40, "fifty": 50, "sixty": 60
+}
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+MONTHS = ("january", "february", "march", "april", "may", "june", "july",
+          "august", "september", "october", "november", "december")
+
 def parse_time_command(text):
     clean_text = text.lower()
-    word_to_num = {
-        "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-        "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30,
-        "forty": 40, "fifty": 50, "sixty": 60
-    }
-    
+
     t_match = re.search(r'(?:set\s+(?:a|an)\s+)?timer for (a|an|half an|\d+|[a-z]+(?:[- ][a-z]+)?)\s*(sec|min|hour)', clean_text)
     if t_match:
         val_str = t_match.group(1)
@@ -1018,7 +1028,7 @@ def parse_time_command(text):
         elif val_str.isdigit():
             val = int(val_str)
         else:
-            val = sum(word_to_num.get(w, 0) for w in re.split(r'[- ]', val_str))
+            val = sum(WORD_TO_NUM.get(w, 0) for w in re.split(r'[- ]', val_str))
     
         if val > 0:
             mult = 1
@@ -1044,6 +1054,56 @@ def parse_time_command(text):
     if "cancel alarm" in clean_text or "cancel timer" in clean_text:
         return -1, None
     return None, None
+
+def resolve_archive_date(text):
+    """Maps a spoken date reference to 'YYYY-MM-DD' (None = most recent archive).
+
+    Runs locally instead of asking the LLM: a side request evicts the conversation's prompt
+    cache, so the next answer would have to re-prefill the whole system prompt."""
+    text = text.lower()
+    today = datetime.now().date()
+
+    iso = re.search(r'\b\d{4}-\d{2}-\d{2}\b', text)
+    if iso:
+        return iso.group(0)
+    if "day before yesterday" in text:
+        return (today - timedelta(days=2)).isoformat()
+    if "yesterday" in text:
+        return (today - timedelta(days=1)).isoformat()
+
+    ago = re.search(r'\b(\d+|[a-z]+)\s+days?\s+ago\b', text)
+    if ago:
+        n = int(ago.group(1)) if ago.group(1).isdigit() else WORD_TO_NUM.get(ago.group(1), 0)
+        if n > 0:
+            return (today - timedelta(days=n)).isoformat()
+
+    for idx, day in enumerate(WEEKDAYS):
+        wd = re.search(rf'\b(last\s+)?{day}\b', text)
+        if wd:
+            back = (today.weekday() - idx) % 7
+            if back == 0 and wd.group(1):
+                back = 7
+            return (today - timedelta(days=back)).isoformat()
+
+    months = "|".join(MONTHS)
+    md = (re.search(rf'\b(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({months})\b', text)
+          or re.search(rf'\b({months})\s+(?:the\s+)?(\d{{1,2}})(?:st|nd|rd|th)?\b', text))
+    nth = re.search(r'\bthe\s+(\d{1,2})(?:st|nd|rd|th)\b', text)
+    try:
+        if md:
+            day_s, month_s = (md.group(1), md.group(2)) if md.group(1).isdigit() else (md.group(2), md.group(1))
+            target = today.replace(month=MONTHS.index(month_s) + 1, day=int(day_s))
+            if target > today:
+                target = target.replace(year=today.year - 1)
+            return target.isoformat()
+        if nth:
+            target = today.replace(day=int(nth.group(1)))
+            if target > today:
+                target = (today.replace(day=1) - timedelta(days=1)).replace(day=int(nth.group(1)))
+            return target.isoformat()
+    except ValueError:
+        pass
+    return None
 
 #==================================================================================================#
 #     								  BACKGROUND WORKERS                                           #
@@ -1209,12 +1269,14 @@ def generate_compaction_summary(pruned_msgs):
         response = chat(
             model=OLLAMA_MODEL,
             messages=[{'role': 'user', 'content': summary_prompt}],
+            think=False,
+            keep_alive=OLLAMA_KEEP_ALIVE,
             options={
-                'num_ctx': MODEL_MAX_TOKENS,
+                **LLM_RUNNER_OPTIONS,
                 'temperature': 0.2,
                 'top_p': 0.85,
                 'num_predict': 150,
-                'stop': ['\n\n', '<end_of_turn>', '<eos>']
+                'stop': ['\n\n']
             }
         )
         return response['message']['content'].strip()
@@ -1469,27 +1531,11 @@ def search_archival_memory(user_text):
     else:
         set_status("● SEARCHING ARCHIVAL DATABANKS...", A)
 
-    now = datetime.now()
-    date_prompt = (
-        f"Today is {now.strftime('%A, %Y-%m-%d')}. "
-        f"The user said: '{user_text}'. "
-        f"Extract the specific past date they are referring to. "
-        f"Return ONLY the date in YYYY-MM-DD format. If no specific date is mentioned (e.g. 'last time', 'previously'), return NONE."
-    )
-
     try:
-        response = chat(
-            model=OLLAMA_MODEL,
-            messages=[{'role': 'user', 'content': date_prompt}],
-            options={'temperature': 0.0, 'num_predict': 15, 'num_ctx': 512}
-        )
-        
-        match = re.search(r'\d{4}-\d{2}-\d{2}', response['message']['content'])
         filepath = None
-        target_date = ""
+        target_date = resolve_archive_date(user_text) or ""
 
-        if match:
-            target_date = match.group(0)
+        if target_date:
             filepath = os.path.join(ARCHIVE_DIR, f"orac_archive_{target_date}.json")
         else:
             if os.path.exists(ARCHIVE_DIR):
@@ -1538,6 +1584,33 @@ def search_archival_memory(user_text):
         if state.debug: print(f"\n[DEBUG] RAG Crash: {e}")
     
     return ""
+
+def preload_model():
+    """Loads the model and prefills the system prompt at boot, in the background.
+
+    Without this the first answer pays for the cold load (~10s) and a full system-prompt prefill,
+    and its first sentences are spoken while that memory/GPU churn is still happening. The request
+    renders the same prompt prefix as a real first turn, so the cache is re-used by it."""
+    t_start = time.time()
+    try:
+        chat(
+            model=OLLAMA_MODEL,
+            messages=[{'role': 'system', 'content': SYSTEM_INSTRUCTION},
+                      {'role': 'user', 'content': FIRST_TURN_TAG}],
+            think=False,
+            keep_alive=OLLAMA_KEEP_ALIVE,
+            options={**LLM_RUNNER_OPTIONS, 'num_predict': 1}
+        )
+        msg = f"[DEBUG] Model preloaded in {time.time() - t_start:.2f}s"
+    except Exception as e:
+        msg = f"[DEBUG] Model preload failed: {e}"
+    if state.debug:
+        with state.terminal_lock:
+            if TELETYPE_MODE:
+                sys.stdout.write(f"{DIM}{msg}{RESET}\n")
+            else:
+                sys.stdout.write(f"\0337\033[{state.term_rows-3};1H\033[2K{DIM}{msg}{RESET}\0338")
+            sys.stdout.flush()
 
 def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     translated_prompt = translate_user_prompt(prompt)
@@ -1613,7 +1686,7 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
 
     with state.hist_lock:
         if len(state.history) == 0:
-            final_prompt = f"[SUBJECT: USER][PERSPECTIVE: 2nd-Person]\n" + final_prompt
+            final_prompt = FIRST_TURN_TAG + final_prompt
         state.history.append({'role': 'user', 'content': final_prompt})
     
     # PRUNING #
@@ -1659,11 +1732,8 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             pruned = True
 
     if pruned:
-        try:
-            requests.post("http://localhost:11434/api/generate", 
-                          json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=1.0)
-        except: pass
-        time.sleep(1.0)
+        # No model unload needed: Ollama's prompt cache is keyed on the prompt text, so the pruned
+        # history simply re-uses the cached system prompt. Unloading forced a cold reload + full re-prefill.
         set_status("● PRUNING COMPLETED: CONTEXT WINDOW STABILIZED", A)
 
     update_header_only()
@@ -1693,20 +1763,17 @@ def stream_ai_response(prompt, tts, teletype, epoch_id=None):
             model=OLLAMA_MODEL,
             messages=messages_to_send,
             stream=True,
-            keep_alive=14400,
+            keep_alive=OLLAMA_KEEP_ALIVE,
             think=False,
             options={
-                'num_ctx': MODEL_MAX_TOKENS,
-                'num_keep': SYS_TOKENS_LEN,
+                **LLM_RUNNER_OPTIONS,
                 'temperature': 1,
                 'top_p': 0.90,
                 'top_k': 30,
                 'min_p': 0.05,
                 'repeat_penalty': 1.06,
-                'repeat_last_n': 96, 
-                'num_batch': 256,
+                'repeat_last_n': 96,
                 'num_predict': 400,
-                'stop': ['<end_of_turn>', '<eos>']
             }
         ):
             if state.is_interrupted.is_set() or (epoch_id is not None and getattr(state, 'stream_epoch', None) != epoch_id):
@@ -1971,6 +2038,8 @@ def run_local_bot():
     recognizer.non_speaking_duration = 0.3 
     recognizer.phrase_threshold = 0.5 
 
+    threading.Thread(target=preload_model, daemon=True).start()
+
     tts = MacTTS()
     teletype = TeletypeUI()
 
@@ -2045,8 +2114,6 @@ def run_local_bot():
                                 state.history.clear()
                                 state.full_message_log.clear()                     
                             if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
-                            try: chat(model=OLLAMA_MODEL, messages=[], keep_alive=0)
-                            except: pass
 
                             if TELETYPE_MODE:
                                 with state.terminal_lock:
@@ -2178,8 +2245,6 @@ def run_local_bot():
                                 state.history.clear()
                                 state.full_message_log.clear()                     
                             if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
-                            try: chat(model=OLLAMA_MODEL, messages=[], keep_alive=0)
-                            except: pass
 
                             if TELETYPE_MODE:
                                 with state.terminal_lock:
