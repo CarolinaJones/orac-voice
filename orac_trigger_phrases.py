@@ -1,13 +1,14 @@
-#---------------------------------------------------#
-#        ORAC-VOICE (Lore friendly VoiceChat)	    #
-#	         orac_trigger_phrases.py v1.0			#
-#													#
-#	v1.0.1: Review fixes - see [P9] notes below.	#
-#	v1.0: First entry: Trigger phrases and Filler	#
-#													#
-#          Copyright © 2026 Caroline Mayne			#
-#		   https://github.com/CarolinaJones/	   	#
-#––––––––––––––––––––––––––––––––––––––––––––-----––#
+#===================================================#
+#                O R A C - V O I C E                #
+#              Lore friendly VoiceChat              #
+#         orac_trigger_phrases.py  ·  v1.0.1        #
+#                                                   #
+#   v1.0.1: Review fixes - see [P9] notes below.    #
+#   v1.0: First entry: Trigger phrases and Filler   #
+#                                                   #
+#          Copyright © 2026 Caroline Mayne          #
+#         https://github.com/CarolinaJones/         #
+#===================================================#
 
 trigger_phrases = {
     "VERY_WELL_PHRASES": (

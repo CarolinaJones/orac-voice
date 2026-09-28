@@ -1,9 +1,13 @@
-#---------------------------------------------------#
-#     ORAC-VOICE v1.0.6 (Lore friendly VoiceChat)	#
-#     v1.0.5: [P4] longest-match-first ordering	#
-#          Copyright © 2026 Caroline Mayne			#
-#		   https://github.com/CarolinaJones/	   	#
-#––––––––––––––––––––––––––––––––––––––––––––-----––#
+#===================================================#
+#                O R A C - V O I C E                #
+#              Lore friendly VoiceChat              #
+#            orac_phonetics.py  ·  v1.0.6           #
+#                                                   #
+#   v1.0.5: [P4] longest-match-first ordering       #
+#                                                   #
+#          Copyright © 2026 Caroline Mayne          #
+#         https://github.com/CarolinaJones/         #
+#===================================================#
 
 import re
 

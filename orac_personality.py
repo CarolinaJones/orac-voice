@@ -1,25 +1,26 @@
-#---------------------------------------------------#
-#        ORAC-VOICE (Lore friendly VoiceChat)	    #
-#	         orac_personality.py v1.4.4				#
-#													#
-#	v1.4.4: Revamp of Behavior: Move towards		#
-#	Forcing tone of voice (Irritable/impatient)		#
-#													#
-#	v1.4.3: In TONE, changed pedantic to mildy      #
-#	pedantic and added unsparing.					#
-#													#
-#   v1.4.2: Added SELF-REFERENCE ANCHOR 		    #
+#===================================================#
+#                O R A C - V O I C E                #
+#              Lore friendly VoiceChat              #
+#           orac_personality.py  ·  v1.4.4          #
+#                                                   #
+#   v1.4.4: Revamp of Behavior: Move towards        #
+#   Forcing tone of voice (Irritable/impatient)     #
+#                                                   #
+#   v1.4.3: In TONE, changed pedantic to mildy      #
+#   pedantic and added unsparing.                   #
+#                                                   #
+#   v1.4.2: Added SELF-REFERENCE ANCHOR             #
 #   (reuses the VERY WELL first-token-lock          #
 #   pattern) for the "I was created by Ensor" vs    #
 #   "You were created by Ensor" swap.               #
-#													#
-#	v1.4.2: Added CRITICISM TARGETING + VARIATION   #
+#                                                   #
+#   v1.4.2: Added CRITICISM TARGETING + VARIATION   #
 #   rules (fix contempt-for-biology drift & stock   #
 #   phrase looping) and TOPICS OF GENUINE INTEREST. #
-#													#
-#          Copyright © 2026 Caroline Mayne			#
-#		   https://github.com/CarolinaJones/	   	#
-#––––––––––––––––––––––––––––––––––––––––––––-----––#
+#                                                   #
+#          Copyright © 2026 Caroline Mayne          #
+#         https://github.com/CarolinaJones/         #
+#===================================================#
 
 orac_personality = """
 Speaking as {ORAC_NAME}

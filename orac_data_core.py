@@ -1,8 +1,11 @@
-#---------------------------------------------------#
-#     ORAC-VOICE v1.1.8 (Lore friendly VoiceChat)	#
-#          Copyright © 2026 Caroline Mayne			#
-#		   https://github.com/CarolinaJones/	   	#
-#––––––––––––––––––––––––––––––––––––––––––––-----––#
+#===================================================#
+#                O R A C - V O I C E                #
+#              Lore friendly VoiceChat              #
+#            orac_data_core.py  ·  v1.1.8           #
+#                                                   #
+#          Copyright © 2026 Caroline Mayne          #
+#         https://github.com/CarolinaJones/         #
+#===================================================#
 
 data_core = """
 <chronological_history>

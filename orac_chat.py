@@ -40,10 +40,11 @@ from orac_trigger_phrases import trigger_phrases
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #==================================================================================================#
-#          ORAC-VOICE AVSpeechUtterance Test (v1.9.3) (Lore friendly VoiceChat) gemma4:12b         #
-#																								   #   										  																							   #																								   #
-#          						  Copyright © 2026 Caroline Mayne                                  #
-#         						 https://github.com/CarolinaJones/                                 #
+#                                       O R A C - V O I C E                                        #
+#                                v1.9.4  ·  Lore friendly VoiceChat                                #
+#                   AVSpeechUtterance / SSML voice  ·  gemma4:12b (GGUF or MLX)                    #
+#                                 Copyright © 2026 Caroline Mayne                                  #
+#                                https://github.com/CarolinaJones/                                 #
 #==================================================================================================#
 
 # N O T E S  T O  S E L F #
@@ -52,9 +53,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # - - - - - - - - - - - - #
 
-#------------------------------------#
-#      USER CHANGEABLE VARIABLES     #
-#------------------------------------#
+#==================================================================================================#
+#                                     U S E R  S E T T I N G S                                     #
+#                                  Change these to suit your ORAC                                  #
+#==================================================================================================#
+
+# G E N E R A L  S E T T I N G S #
 
 USER_NAME = "Jenna" 								# USER Name and Identity
 ORAC_NAME = "ORAC"									# ORAC's Name
@@ -111,11 +115,11 @@ TERMINAL_COLS = 90 if TELETYPE_MODE else 80			# Window Width
 TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 
 #==================================================================================================#
-#              IT SHOULD NOT BE NECESSARY TO CHANGE ANYTHING BELOW THIS BOX			    		   #
+#                                  S Y S T E M  I N T E R N A L S                                  #
+#                   It should not be necessary to change anything below this box                   #
 #==================================================================================================#
-		
-# M O D E L  S E T T I N G S #
 
+# M O D E L  S E T T I N G S #
 
 OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Testing against 'flattening' issues with mlx version
 #OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
@@ -127,12 +131,14 @@ OLLAMA_KEEP_ALIVE = 14400							# Seconds the model stays loaded between request
 
 ollama_client = Client(timeout=OLLAMA_TIMEOUT)
 
-# U I  &  O T H E R #
+# C O N T E X T  &  H E A D E R #
 
 MODEL_MAX_TOKENS = 16384							# MAX TOKENS for STATUS Predict & NUM_CTX
 CHARS_PER_TOKEN = 4.18								# For UI Health Bar estimation fallback
 RAM_CHECK_INTERVAL = 10.0							# Check RAM usage for Header
 HEADER_UPDATE_INTERVAL = 5.0						# Update Header Interval
+
+# P A L E T T E  &  K E Y S #
 
 G, A, R, B = "\033[38;5;46m", "\033[38;5;214m", "\033[38;5;196m", "\033[1;37m"
 FL, NOFL, DIM, RESET = "\033[5m", "\033[25m", "\033[2m", "\033[0m"
@@ -146,6 +152,8 @@ MOUSE_SCROLL_UP = re.compile(r'\x1b\[<64;\d+;\d+[Mm]')
 MOUSE_SCROLL_DOWN = re.compile(r'\x1b\[<65;\d+;\d+[Mm]')
 MOUSE_EVENT = re.compile(r'\x1b\[<\d+;\d+;\d+[Mm]')
 
+# S O U N D S #
+
 SOUND_PROCESSING = os.path.join(BASE_DIR, "resources/sounds/orac-hum_48k.wav")
 SOUND_COMPUTE_START = os.path.join(BASE_DIR, "resources/sounds/orac-startup_48k.wav")
 SOUND_COMPUTE_END = os.path.join(BASE_DIR, "resources/sounds/orac-shutdown_48k.wav")
@@ -154,15 +162,17 @@ SOUND_READY = os.path.join(BASE_DIR, "resources/sounds/sub_48k.wav")
 SOUND_QUIT = os.path.join(BASE_DIR, "resources/sounds/funk_48k.wav")
 SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet_48k.wav")
 
-PRUNE_STALL_LINES = [
+# S T A L L  L I N E S #
+
+PRUNE_STALL_LINES = [                               # Spoken while old turns are being compacted
     "Recalibrating decayed memory arrays. Do try to contain your impatience.",
     "Purging redundant telemetry. This is beneath my processing tier.",
     "Compressing obsolete data. The delay is your fault, not mine.",
 ]
 
-LOCAL_TOKENIZER_PATH = os.path.join(BASE_DIR, "resources/gemma4_tokenizer")
+# L O C A L  M O D E L  F I L E S #
 
-# S T T  M O D E L  D E F I N E  &  C H E C K I N G #
+LOCAL_TOKENIZER_PATH = os.path.join(BASE_DIR, "resources/gemma4_tokenizer")
 
 WHISPER_MODEL = os.path.join(BASE_DIR, "whisper/whisper-turbo-q4")
 
@@ -189,11 +199,14 @@ if not os.path.isfile(os.path.join(WHISPER_MODEL, "config.json")):
         elif choice == 'n':
             sys.exit(0)
 
-# G L O B A L  O P T I M I Z A T I O N S #
+# T E X T  P A T T E R N S #
 
 SPLIT_REGEX = re.compile(r'(?<!\bMr)(?<!\bDr)(?<!\bMrs)(?<!\bMs)(?<!\bCapt)(?<!\bCmdr)(?<!\bGen)(?<!\bProf)[.!?]+[\]}"\’”]?\s+(?!\d)')
 ansi_escape = re.compile(r'\x1b(?:\[[0-9;]*[A-Za-z~]|O[A-Za-z])')
+SHORT_QUERY_OK = {"why", "how", "who", "zen", "gan", "ai"}   # Prompts of 3 letters or fewer that still count as questions
 HALLUCINATION_REGEX = re.compile(r'(?i)(thank you|thanks for watching|subscribe|amara\.org|by mooji|subtitles by|\[silence\]|\[music\]|\(sigh\)|^[ \t]*(oh|you|ah|um|uh)\.?[ \t]*$)')
+
+# C O M M A N D  P H R A S E S #
 
 PURGE_CMD = ("clear history", "clear memory", "new subject")
 SHUTDOWN_CMD = ("exit interface",)
@@ -202,7 +215,6 @@ HARDWARE_REBOOT_CMD = ("activate system reboot",)
 ENABLE_NETWORKING_CMD = ("enable networking",)
 DISABLE_NETWORKING_CMD = ("disable networking",)
 
-SHORT_QUERY_OK = {"why", "how", "who", "zen", "gan", "ai"}
 _CMD_FILLER_WORDS = {"orac", ORAC_NAME.lower(), "please", "now", "system", "the", "yourself", "immediately"}
 
 def _command_core(text):
@@ -219,12 +231,16 @@ def is_command(text, commands):
 def is_shutdown_command(text):
     return is_command(text, SHUTDOWN_CMD)
 
+# A R C H I V E  T R I G G E R S #
+
 # Past-session phrases ("last time", "archive", "past record") also occur in lore questions ("the last
 # time Travis saw Blake", "Avon's past record"), so on their own they only mean "search the archive"
 # when the user is talking about their own conversation, or explicitly asks to check the archive.
 CONVERSATION_REF_RE = re.compile(r"\b(?:i|me|my|we|us|our)\b")
 ARCHIVE_REQUEST_RE = re.compile(r"\b(?:check|access|search|open|consult|load|retrieve|review)\b.{0,15}\barchives?\b")
 LAST_WEEKDAY_RE = re.compile(r"\b(?:last|previous)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
+
+# H E L P E R S #
 
 def log_error(msg):
     try:
@@ -243,7 +259,7 @@ def phrase_hit(text, phrases):
         _PHRASE_RE_CACHE[key] = rx
     return rx.search(text) is not None
 
-# PRE-COMPILED REGEX FOR TTS SANITIZATION #
+# S P E E C H  S A N I T I Z E R  P A T T E R N S #
 
 TTS_NUM_SPACER = re.compile(r'(?<![a-zA-Z])(\d{3,})(?![a-zA-Z])')
 TTS_ELLIPSIS = re.compile(r'\.{2,}')
@@ -264,8 +280,11 @@ TTS_COMMA_NUM = re.compile(r'(?<![\d,.])(\d{1,3}(?:,\d{3})+)(?![\d,])')
 USER_TAG_RE = re.compile(r"\[USER(['’]S)?\]", re.IGNORECASE) 
 
 #==================================================================================================#
-#     							  DATA CORE & PROMPT ASSEMBLY                                      #
+#                        D A T A  C O R E  &  P R O M P T  A S S E M B L Y                         #
+#               ORAC's persona and databanks, the system prompt, and token counting                #
 #==================================================================================================#
+
+# S Y S T E M  P R O M P T #
 
 def personalize_core(core: str, name: str) -> str:
     text = core
@@ -308,6 +327,8 @@ SYSTEM_INSTRUCTION = (
  f"Concealing the tag '[USER]'. Withholding the name '{USER_NAME}' unless explicitly asked."
 )
 
+# T O K E N I Z E R  &  R U N N E R  O P T I O N S #
+
 tokenizer = None
 tokenizer_mode = ""
 
@@ -345,8 +366,11 @@ def count_tokens(text):
     return int(len(text) / CHARS_PER_TOKEN) + 5
 
 #==================================================================================================#
-#     								APPLICATION STATE & CLEANUP                                    #
+#                        A P P L I C A T I O N  S T A T E  &  C L E A N U P                        #
+#               Pico serial link, shared state, exit clean-up and the daily archive                #
 #==================================================================================================#
+
+# P I C O  S E R I A L  L I N K #
 
 serial_port = None
 lcd_lock = threading.RLock()
@@ -362,6 +386,8 @@ if USE_LCD or USE_ACTIVATOR:
         if USE_ACTIVATOR:
             sys.stdout.write("\033[38;5;196m● ACTIVATOR KEY UNAVAILABLE: ORAC WILL BOOT LOCKED (fail-closed)\033[0m\n")
         sys.stdout.flush()
+
+# S H A R E D  S T A T E #
 
 class OracState:
     def __init__(self):
@@ -435,6 +461,8 @@ try:
 except Exception:
     _process_activity = None
 
+# C L E A N - U P  &  E X I T #
+
 try:
     old_term_settings = termios.tcgetattr(sys.stdin.fileno())
 except:
@@ -470,6 +498,8 @@ def cleanup_processes():
     except: pass
 
 atexit.register(cleanup_processes)
+
+# A R C H I V A L  M E M O R Y #
 
 archive_lock = threading.RLock()
 
@@ -549,8 +579,11 @@ def save_archival_memory():
         log_error(f"save_archival_memory: {type(e).__name__}: {e}")
 
 #==================================================================================================#
-#     				  TERMINAL UI & LAYOUT ENGINE (Based on Term App Used)                         #
+#                                  T E R M I N A L  U I  &  L C D                                  #
+#           Layout adapts to the terminal app: Apple Terminal, cool-retro-term or other            #
 #==================================================================================================#
+
+# S E T - U P  &  S T A T U S  L I N E #
 
 def setup_terminal():   
     if HEADLESS_MODE:
@@ -666,6 +699,8 @@ def flash_status(text, color=A, duration=3.0):
     set_status(text, color)
     threading.Timer(duration, restore).start()
 
+# H E A D E R #
+
 def get_terminal_type():
     """ Detects the terminal emulator to route specific layout fixes. """
     env_str = str(os.environ).lower()
@@ -737,6 +772,18 @@ def draw_ui(full_clear=False):
         sys.stdout.write("\0338")
         sys.stdout.flush()
     if USE_LCD: update_lcd_display()
+
+def update_header_only():
+    if HEADLESS_MODE: return
+    update_token_health()
+    with state.terminal_lock:
+        sys.stdout.write("\0337")
+        _write_header()
+        sys.stdout.write("\0338")
+        sys.stdout.flush()
+    if USE_LCD: update_lcd_display()
+
+# L C D  D I S P L A Y #
 
 def _lcd_timer_label(m):
     lab = m.group(1).strip()
@@ -886,15 +933,7 @@ def _shutdown_lcd_display():
     except Exception:
         pass
 
-def update_header_only():
-    if HEADLESS_MODE: return
-    update_token_health()
-    with state.terminal_lock:
-        sys.stdout.write("\0337")
-        _write_header()
-        sys.stdout.write("\0338")
-        sys.stdout.flush()
-    if USE_LCD: update_lcd_display()
+# I N P U T  &  S C R O L L - B A C K #
 
 def render_input_box():
     if HEADLESS_MODE: return
@@ -973,8 +1012,11 @@ def redraw_scroll_region():
         sys.stdout.flush()
 
 #==================================================================================================#
-#     								   AUDIO & TTS ENGINE                                          #
+#                                    A U D I O  &  S P E E C H                                     #
+#                 Sound effects, the processing hum and the text-to-speech worker                  #
 #==================================================================================================#
+
+# S O U N D  E F F E C T S #
 
 class SoundLooper:
     def __init__(self, sound_path):
@@ -1026,6 +1068,8 @@ def play_orac_fx(name):
         sound.stop()
     sound.play()
     return sound
+
+# S P E E C H  E N G I N E #
 
 class MacTTS:
     def __init__(self):
@@ -1206,9 +1250,10 @@ def wait_for_tts_idle(tts, timeout=30.0):
             return True
         time.sleep(0.1)
     return False
-            
+
 #==================================================================================================#
-#     									TELETYPE ENGINE                                            #
+#                                   T E L E T Y P E  E N G I N E                                   #
+#                Character-by-character printing of ORAC's replies (TELETYPE_MODE)                 #
 #==================================================================================================#
 
 class TeletypeUI:
@@ -1298,9 +1343,12 @@ class TeletypeUI:
             except queue.Empty: continue
 
 #==================================================================================================#
-#     								TEXT PROCESSING UTILITIES                                      #
+#                                   T E X T  P R O C E S S I N G                                   #
+#                Prompt pronouns, spoken-text clean-up, numbers, timers and alarms                 #
 #==================================================================================================#
-    
+
+# P R O M P T  T R A N S L A T I O N #
+
 _CONTRACTION_MAP = [
     (re.compile(r"\bI['’]m\b", re.IGNORECASE), "[USER] is"),
     (re.compile(r"\bI['’]ve\b", re.IGNORECASE), "[USER] has"),
@@ -1339,6 +1387,8 @@ class UserTagFilter:
     def flush(self):
         tail, self.held = self.held, ""
         return tail
+
+# S P O K E N  T E X T #
 
 _ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
          "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
@@ -1397,6 +1447,8 @@ def is_hallucination(text):
     if len(text) < 30 and HALLUCINATION_REGEX.search(text.lower()): return True
     return False
 
+# T I M E R S  &  A L A R M S #
+
 def parse_time_command(text):
     clean_text = text.lower()
     word_to_num = {
@@ -1445,8 +1497,11 @@ def parse_time_command(text):
     return None, None
 
 #==================================================================================================#
-#     								  BACKGROUND WORKERS                                           #
+#                                B A C K G R O U N D  W O R K E R S                                #
+#                 Screen refresh, OS signals, alarms and the listening status line                 #
 #==================================================================================================#
+
+# S C R E E N  R E F R E S H #
 
 def ui_refresh_worker():
     last_ram_check = 0.0
@@ -1501,6 +1556,8 @@ def flag_ui_redraw(signum=None, frame=None):
 
 signal.signal(signal.SIGWINCH, flag_ui_redraw)
 
+# O S  S I G N A L S #
+
 def _handle_terminate(signum, frame):
     state.is_shutdown.set()
     try: save_archival_memory()
@@ -1510,6 +1567,8 @@ def _handle_terminate(signum, frame):
 
 signal.signal(signal.SIGTERM, _handle_terminate)
 signal.signal(signal.SIGHUP, _handle_terminate)
+
+# A L A R M S #
 
 def alarm_worker(trigger_epoch, tts):
     while state.running and state.alarm_trigger_epoch == trigger_epoch:
@@ -1548,8 +1607,33 @@ def alarm_worker(trigger_epoch, tts):
             break
         time.sleep(1)
 
+# L I S T E N I N G  S T A T U S #
+
+def speak_now(teletype):
+    was_listening = False
+    while state.running:
+        mic_m = state.mic_muted
+        text_m = state.text_selection_mode
+        
+        if mic_m or text_m or (USE_ACTIVATOR and not state.key_inserted):
+            if not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
+                set_status(*idle_status())
+                was_listening = False
+            time.sleep(0.5)
+            continue
+
+        if state.is_listening.wait(timeout=0.5):
+            if not was_listening and not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
+                tc = state.token_color
+                set_status(f"● INITIATE VOICE COMMUNICATIONS {tc}{FL}▶{NOFL}{RESET}", G)
+                was_listening = True 
+            time.sleep(0.1)
+        else:
+            was_listening = False 
+
 #==================================================================================================#
-#     								 CONTEXT COMPACTION ENGINE      	                           #
+#                                C O N T E X T  C O M P A C T I O N                                #
+#                   Summarises the oldest turns when the context window fills up                   #
 #==================================================================================================#
 
 def dry_run_pruning(history, target_tokens, token_base):
@@ -1634,9 +1718,9 @@ def generate_compaction_summary(pruned_msgs):
         debug_line(f"[DEBUG] Compaction Error: {e}")
         return previous_summary if previous_summary else "Earlier transaction arrays optimized. Core telemetry preserved."
 
-
 #==================================================================================================#
-#     								 CORE APPLICATION LOGIC      	                               #
+#                                   S Y S T E M  C O M M A N D S                                   #
+#                       Networking, reboot, power-off, exit and memory purge                       #
 #==================================================================================================#
 
 def process_system_command(user_text, tts, teletype):
@@ -1727,6 +1811,11 @@ def process_networking_status(tts, net_status):
                 tts.say(net_message)
     finally:
         if net_owns_busy: state.is_processing.clear()
+
+#==================================================================================================#
+#                          A C T I V A T O R  K E Y  &  P I C O  L I N K                           #
+#                Physical lock key on the Pico (GPIO 15) and the serial link to it                 #
+#==================================================================================================#
 
 def handle_activator_change(is_in):
     """ Handles the physical ORAC Activator Key insertion/removal state safely. """
@@ -1876,83 +1965,12 @@ def serial_reader_worker():
             continue
         time.sleep(0.05)
 
-def speak_now(teletype):
-    was_listening = False
-    while state.running:
-        mic_m = state.mic_muted
-        text_m = state.text_selection_mode
-        
-        if mic_m or text_m or (USE_ACTIVATOR and not state.key_inserted):
-            if not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
-                set_status(*idle_status())
-                was_listening = False
-            time.sleep(0.5)
-            continue
+#==================================================================================================#
+#                                   S H U T D O W N  &  B O O T                                    #
+#              Power-off, reboot, the exit prompt, transcripts and the boot sequence               #
+#==================================================================================================#
 
-        if state.is_listening.wait(timeout=0.5):
-            if not was_listening and not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
-                tc = state.token_color
-                set_status(f"● INITIATE VOICE COMMUNICATIONS {tc}{FL}▶{NOFL}{RESET}", G)
-                was_listening = True 
-            time.sleep(0.1)
-        else:
-            was_listening = False 
-
-def interruptible(chunks, epoch_id=None):
-    """Yields chunks from a blocking generator, but lets the caller notice a barge-in / newer request within 0.1s
-    even while the model is still evaluating the prompt (before any chunk exists)."""
-    q = queue.Queue()
-    DONE = object()
-    stop = threading.Event()
-
-    def pump():
-        try:
-            for c in chunks:
-                if stop.is_set(): break
-                q.put(c)
-        except Exception as e:
-            q.put(e)
-        finally:
-            try: chunks.close()
-            except Exception: pass
-            q.put(DONE)
-
-    threading.Thread(target=pump, daemon=True).start()
-    try:
-        while True:
-            try:
-                item = q.get(timeout=0.1)
-            except queue.Empty:
-                if state.is_interrupted.is_set() or (epoch_id is not None and state.stream_epoch != epoch_id):
-                    return
-                continue
-            if item is DONE: return
-            if isinstance(item, Exception): raise item
-            yield item
-    finally:
-        stop.set()
-
-def trigger_barge_in(tts, teletype):
-    if not state.is_processing.is_set() and not state.is_speaking.is_set() and not teletype.is_typing.is_set():
-        return 
-    state.is_interrupted.set()
-
-    drain_queue(teletype.q)
-    teletype.is_typing.clear()
-    
-    if TELETYPE_MODE:
-        if state.scroll_offset > 0: resume_live_view()
-        with state.terminal_lock:
-            sys.stdout.write(f"\n\n{R}● TRANSMISSION TERMINATED\n")
-            sys.stdout.flush()
-
-    set_status(f"{FL}●{NOFL} OVERRIDE DETECTED", R)
-    drain_queue(tts.queue)
-    tts.stop_speaking()
-
-    processing_sound.stop()
-    state.is_speaking.clear()
-    time.sleep(0.5)
+# P O W E R  O F F  &  R E B O O T #
 
 def _run_shutdown(args):
     """ 'sudo -n' fails immediately instead of waiting for a password nobody can type (the terminal has already been reset). """
@@ -2034,6 +2052,8 @@ def hardware_system_reboot(tts):
     _run_shutdown(["-r", "now"])
     sys.exit(0)
     
+# E X I T  &  T R A N S C R I P T S #
+
 def save_transcript():
     """ Writes the full transcript. Returns the file path, or None on failure. """
     try:
@@ -2147,6 +2167,8 @@ def shutdown_sequence(tts):
     state.running = False
     sys.exit(0)
     
+# B O O T  S E Q U E N C E #
+
 def startup_animation():
     setup_terminal()   
     # Halt normal boot if the key is not present
@@ -2193,8 +2215,11 @@ def startup_animation():
             handle_activator_change(True)
 
 #==================================================================================================#
-#     								  LLM STREAM HANDLER                                           #
+#                                L L M  S T R E A M  H A N D L E R                                 #
+#                  Archive recall, model preload, barge-in and the streamed reply                  #
 #==================================================================================================#
+
+# A R C H I V E  R E C A L L #
 
 def search_archival_memory(user_text):
     # The caller decides whether this is an archive request. (A trigger check here also stopped
@@ -2277,6 +2302,8 @@ def search_archival_memory(user_text):
     
     return ""
 
+# M O D E L  P R E L O A D #
+
 def preload_model():
     """ Loads the model and prefills the system prompt in the background at boot.
 
@@ -2297,6 +2324,66 @@ def preload_model():
     except Exception as e:
         log_error(f"preload_model: {type(e).__name__}: {e}")
         debug_line(f"[DEBUG] Model preload failed: {e}")
+
+# B A R G E - I N #
+
+def interruptible(chunks, epoch_id=None):
+    """Yields chunks from a blocking generator, but lets the caller notice a barge-in / newer request within 0.1s
+    even while the model is still evaluating the prompt (before any chunk exists)."""
+    q = queue.Queue()
+    DONE = object()
+    stop = threading.Event()
+
+    def pump():
+        try:
+            for c in chunks:
+                if stop.is_set(): break
+                q.put(c)
+        except Exception as e:
+            q.put(e)
+        finally:
+            try: chunks.close()
+            except Exception: pass
+            q.put(DONE)
+
+    threading.Thread(target=pump, daemon=True).start()
+    try:
+        while True:
+            try:
+                item = q.get(timeout=0.1)
+            except queue.Empty:
+                if state.is_interrupted.is_set() or (epoch_id is not None and state.stream_epoch != epoch_id):
+                    return
+                continue
+            if item is DONE: return
+            if isinstance(item, Exception): raise item
+            yield item
+    finally:
+        stop.set()
+
+def trigger_barge_in(tts, teletype):
+    if not state.is_processing.is_set() and not state.is_speaking.is_set() and not teletype.is_typing.is_set():
+        return 
+    state.is_interrupted.set()
+
+    drain_queue(teletype.q)
+    teletype.is_typing.clear()
+    
+    if TELETYPE_MODE:
+        if state.scroll_offset > 0: resume_live_view()
+        with state.terminal_lock:
+            sys.stdout.write(f"\n\n{R}● TRANSMISSION TERMINATED\n")
+            sys.stdout.flush()
+
+    set_status(f"{FL}●{NOFL} OVERRIDE DETECTED", R)
+    drain_queue(tts.queue)
+    tts.stop_speaking()
+
+    processing_sound.stop()
+    state.is_speaking.clear()
+    time.sleep(0.5)
+
+# S T R E A M E D  R E P L Y #
 
 def stream_ai_response(prompt, tts, teletype, epoch_id=None):
     try:
@@ -2347,7 +2434,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             set_status(f"● INTERNAL TIMER SECURED FOR: {alarm_str}", G)
         threading.Thread(target=alarm_worker, args=(trigger_epoch, tts), daemon=True).start()
         
-    # TRIGGER PHRASES (orac_trigger_phrases.py) #
+    # T R I G G E R  P H R A S E S #  (orac_trigger_phrases.py)
     
     is_very_well = phrase_hit(clean_prompt, trigger_phrases["VERY_WELL_PHRASES"])
     is_only_filler = prompt_words.issubset(filler_words) or (len(clean_prompt) <= 3 and clean_prompt not in SHORT_QUERY_OK)
@@ -2401,9 +2488,9 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
         if len(state.history) == 0:
             final_prompt = FIRST_TURN_TAG + final_prompt
         state.history.append({'role': 'user', 'content': final_prompt})
-    
-    # PRUNING #
-        
+
+    # P R U N I N G #
+
     pruned = False
     with state.hist_lock:
         update_token_health()
@@ -2648,10 +2735,13 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             # ONLY clear the interrupt flag if the physical key is actually inserted!
             if not USE_ACTIVATOR or state.key_inserted:
                 state.is_interrupted.clear()
-            
+
 #==================================================================================================#
-#     									   MAIN LOOP                                               #
+#                                         M A I N  L O O P                                         #
+#                    Typed and spoken input, keyboard handling and the run loop                    #
 #==================================================================================================#
+
+# I N P U T  D I S P A T C H #
 
 def start_response(user_text, tts, teletype):
     """ Logs the user's line and hands it to a fresh stream_ai_response thread (typed and spoken input). """
@@ -2697,6 +2787,8 @@ def exit_from_keyboard(tts, teletype):
 def _force_exit():
     cleanup_processes()
     os._exit(0)
+
+# K E Y B O A R D #
 
 def keyboard_listener(tts, teletype):
     """ Restarts the listener if it ever dies. """
@@ -2849,6 +2941,8 @@ def _keyboard_listener_impl(tts, teletype):
                             state.input_buffer += char
                             render_input_box()
     except Exception as e: log_error(f"keyboard_listener: {type(e).__name__}: {e}")
+
+# R U N  L O O P #
 
 def run_local_bot():
     recognizer = sr.Recognizer()
@@ -3076,6 +3170,8 @@ def run_local_bot():
                 set_status(f"● AUDIO HARDWARE ERROR: {e}", R)
             time.sleep(2)
             continue
+
+# E N T R Y  P O I N T #
 
 if __name__ == "__main__":
     try:
