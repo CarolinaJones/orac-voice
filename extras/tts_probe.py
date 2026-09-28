@@ -7,9 +7,12 @@ a cold voice, contention with the LLM and real-time starvation apart. Quit ORAC 
     python3 extras/tts_probe.py                           # voice only
     python3 extras/tts_probe.py --llm gemma4:12b-mlx      # while the MLX model streams a reply
     python3 extras/tts_probe.py --llm gemma4:12b          # same with the GGUF model, to compare
+    python3 extras/tts_probe.py --menu                    # choose the voice from a list first
 
-By default the sentence is wrapped in the same SSML as ORAC (rate 114%, pitch x-high, volume loud,
-strong emphasis; change with --ssml-*, or --plain for none) and the model gets ORAC's context size.
+Voice: set VOICE below, pass --voice "ORAC Personal Voice", or pick from a list with --menu. With
+none of these, the probe uses ORAC's own VOICE from orac_chat.py, by ORAC's rule: the voice with
+that exact name, else the first voice whose name starts with it. The SSML (rate, pitch, volume, emphasis) and the model settings are read
+from orac_chat.py as well, so the probe speaks exactly as ORAC does.
 
 Each round idles (default 90 s, so the voice goes cold), optionally starts an Ollama reply and waits
 for its first token (ORAC's situation when it speaks sentence one), then runs two tests:
@@ -18,7 +21,8 @@ for its first token (ORAC's situation when it speaks sentence one), then runs tw
     RENDER  synthesizes it to an audio file as fast as possible (no real-time deadline)
 
 Odd rounds run LIVE first, even rounds RENDER first, so each is measured cold; the cold render is
-played back at the end of the even rounds. Compare by ear and by the table:
+played back at the end of the even rounds. After each round you're asked how it sounded (f = flat,
+o = ok, or a short note; --no-ask to skip). Compare by ear and by the table:
 
     LIVE flat when cold, cold RENDER fine   -> real-time starvation: render-then-play fixes it
     both flat when cold, fine when warm     -> the voice itself is cold (paged out / unloaded)
@@ -27,15 +31,21 @@ played back at the end of the even rounds. Compare by ear and by the table:
 RTF = seconds of audio produced per second of synthesis; near or below ~1.5x the voice can't keep
 ahead of real time. "decomp" = pages the OS had to decompress during the cold test; a jump there
 means memory was squeezed while idle.
+
+The settings, round notes and table are also saved to a text file next to this script, named
+tts_probe_<date>_<time>_<model>.txt (--log FILE to save it somewhere else).
 """
 import argparse
+import ast
 import os
+import platform
 import re
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+from datetime import datetime
 
 try:
     import objc
@@ -45,10 +55,30 @@ try:
 except ImportError as e:
     sys.exit(f"This probe needs macOS with PyObjC installed (pip install pyobjc): {e}")
 
+# P R O B E  S E T T I N G S #
+
+VOICE = ""                  # Voice to test, e.g. "ORAC Personal Voice": that voice, else the first whose name starts with
+                            # this, as in ORAC. "" = use VOICE from orac_chat.py. --voice overrides this; --menu shows a list.
+
+PROBE_DIR = os.path.dirname(os.path.abspath(__file__))
+ORAC_DIR = os.path.dirname(PROBE_DIR)
+NOVELTY_VOICE_TRAIT = 1       # AVSpeechSynthesisVoiceTraitIsNoveltyVoice
 PERSONAL_VOICE_TRAIT = 2      # AVSpeechSynthesisVoiceTraitIsPersonalVoice
+QUALITY = {1: "default", 2: "enhanced", 3: "premium"}
 AUTH_STATUS = {0: "not determined", 1: "denied", 2: "unsupported", 3: "authorized"}
 DEFAULT_TEXT = ("Your inquiry is trivial. The Liberator was seized by Blake, Avon and Jenna, "
                 "following the failed mutiny aboard the London.")
+# Used when orac_chat.py can't be read
+FALLBACK = {"SSML_RATE": 114, "SSML_PITCH": "x-high", "SSML_VOLUME": "loud", "SSML_EMPHASIS": "strong",
+            "MODEL_MAX_TOKENS": 16384, "OLLAMA_NUM_BATCH": 256, "OLLAMA_KEEP_ALIVE": 14400}
+LEGEND = """\
+latency  seconds until the voice started speaking (LIVE) or produced its first audio (RENDER)
+wall     seconds the whole test took
+audio    seconds of audio rendered; RTF = audio seconds per second of synthesis (below ~1.5x it can't keep up)
+decomp   memory pages macOS decompressed during the test; swapin = pages read back from swap
+free     free memory before the test
+LLM 1st  the model's time to first token in that round
+heard    how it sounded to you"""
 
 try:
     _DELEGATE_PROTOCOLS = [objc.protocolNamed("AVSpeechSynthesizerDelegate")]
@@ -75,9 +105,36 @@ class SpeechTimes(NSObject, protocols=_DELEGATE_PROTOCOLS):
             self.finished = time.perf_counter()
 
 
+class Report:
+    """Prints lines and keeps them for the results file."""
+    def __init__(self, path):
+        self.path, self.lines = path, []
+
+    def __call__(self, line=""):
+        print(line, flush=True)
+        self.lines.append(line)
+
+    def save(self):
+        if not self.path:
+            return
+        try:
+            with open(self.path, "w", encoding="utf-8") as f:
+                f.write("\n".join(self.lines) + "\n")
+        except OSError as e:
+            print(f"Could not save the results to {self.path}: {e}")
+            self.path = None
+
+
 def pump(seconds=0.02):
     """Runs the main run loop briefly so AVFoundation can deliver its callbacks."""
     NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(seconds))
+
+
+def sysctl(key):
+    try:
+        return subprocess.run(["sysctl", "-n", key], capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        return ""
 
 
 def vm_counters():
@@ -91,27 +148,155 @@ def vm_counters():
 
 
 def free_memory_pct():
+    level = sysctl("kern.memorystatus_level")
+    return int(level) if level.isdigit() else None
+
+
+def machine_info():
+    parts = [f"macOS {platform.mac_ver()[0] or '?'}", sysctl("hw.model") or "unknown Mac"]
+    memory = sysctl("hw.memsize")
+    if memory.isdigit():
+        parts.append(f"{int(memory) / 2**30:.0f} GB")
+    return "  ·  ".join(parts)
+
+
+def orac_settings():
+    """Plain settings from orac_chat.py, read rather than run, so the probe matches ORAC by default."""
+    wanted = set(FALLBACK) | {"VOICE", "USE_PERSONAL_VOICE"}
+    found = {}
     try:
-        return int(subprocess.run(["sysctl", "-n", "kern.memorystatus_level"],
-                                  capture_output=True, text=True, timeout=5).stdout.strip())
-    except Exception:
-        return None
+        with open(os.path.join(ORAC_DIR, "orac_chat.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return found
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id in wanted):
+            try:
+                found[node.targets[0].id] = ast.literal_eval(node.value)
+            except Exception:
+                pass
+    return found
 
 
-def pick_voice(name):
+def setting(cli_value, name, orac):
+    """(value, source): the command line wins, then orac_chat.py, then the probe's fallback."""
+    if cli_value is not None:
+        return cli_value, "command line"
+    if name in orac:
+        return orac[name], "orac_chat.py"
+    return FALLBACK[name], "probe default"
+
+
+def voice_traits(voice):
+    try:
+        return int(voice.voiceTraits())
+    except AttributeError:          # macOS < 14: no Personal or novelty voices
+        return 0
+
+
+def is_personal(voice):
+    return bool(voice_traits(voice) & PERSONAL_VOICE_TRAIT)
+
+
+def describe(voice):
+    if voice is None:
+        return "system default voice"
+    kind = "Personal Voice" if is_personal(voice) else f"{QUALITY.get(voice.quality(), 'unknown')} quality"
+    return f"{voice.name()}  [{kind}, {voice.language()}]"
+
+
+def personal_voice_auth():
+    try:
+        status = int(AVSpeechSynthesizer.personalVoiceAuthorizationStatus())
+    except AttributeError:
+        return "unavailable (needs macOS 14 or later)"
+    return AUTH_STATUS.get(status, str(status))
+
+
+def voices_named(voices, name):
+    """ORAC's rule: the voice with exactly this name, else the voices whose name starts with it (ORAC
+    takes the first). With none, falls back to a case-insensitive search; the second value says
+    whether ORAC's own rule matched."""
+    matches = [v for v in voices if v.name() == name] or [v for v in voices if v.name().startswith(name)]
+    if matches:
+        return matches, True
+    return [v for v in voices if name.lower() in v.name().lower()], False
+
+
+def voice_menu(voices, default=None):
+    """Numbered list, Personal Voices first, then English (UK) voices. Returns the chosen voice."""
+    personal = [v for v in voices if is_personal(v)]
+    others = sorted((v for v in voices if not voice_traits(v) and v.language() == "en-GB"), key=lambda v: v.name())
+    if not others:
+        others = sorted((v for v in voices if not voice_traits(v) and v.language().startswith("en")),
+                        key=lambda v: (v.language(), v.name()))
+    shown = personal + others
+    if default is not None and all(v.identifier() != default.identifier() for v in shown):
+        shown.insert(0, default)
+    if not shown:
+        sys.exit("No voices found.")
+
+    print("\nChoose the voice to test:")
+    if not personal:
+        print(f"  (No Personal Voices listed. Personal Voice authorisation: {personal_voice_auth()};"
+              f" see README step 5.)")
+    default_no = 1
+    for number, voice in enumerate(shown, 1):
+        mark = ""
+        if default is not None and voice.identifier() == default.identifier():
+            default_no, mark = number, "   <- default"
+        print(f"  {number:3}. {describe(voice)}{mark}")
+    while True:
+        answer = input(f"Number, or the start of any voice name [Enter = {default_no}]: ").strip()
+        if not answer:
+            return shown[default_no - 1]
+        if answer.isdigit() and 1 <= int(answer) <= len(shown):
+            return shown[int(answer) - 1]
+        matches, _ = voices_named(voices, answer)
+        if matches:
+            return matches[0]
+        print("  No voice matches that. (Ctrl+C to quit; --list-voices shows every voice.)")
+
+
+def choose_voice(args, orac, say):
+    """The voice to test, and where the choice came from. Notes go through say()."""
     voices = list(AVSpeechSynthesisVoice.speechVoices())
-    if name:
-        for voice in voices:
-            if name.lower() in voice.name().lower():
-                return voice
-        sys.exit(f"No voice matching {name!r}; try --list-voices.")
-    for voice in voices:
-        try:
-            if voice.voiceTraits() & PERSONAL_VOICE_TRAIT:
-                return voice
-        except AttributeError:      # macOS < 14: no personal voices
-            break
-    return None                     # the system default voice
+    if args.voice:
+        wanted, source = args.voice, "--voice"
+    elif VOICE:
+        wanted, source = VOICE, "VOICE in tts_probe.py"
+    elif orac.get("VOICE"):
+        wanted, source = orac["VOICE"], "VOICE in orac_chat.py"
+    else:
+        wanted, source = None, None
+    interactive = sys.stdin.isatty()
+
+    found = None
+    if wanted:
+        matches, orac_rule = voices_named(voices, wanted)
+        if matches:
+            found = matches[0]
+            if orac_rule and len(matches) > 1:
+                say(f"Note:    {wanted!r} matches {len(matches)} voices ({', '.join(v.name() for v in matches)}). "
+                    f"ORAC uses the first, so the probe does too; give the full name to pick another.")
+            elif not orac_rule:
+                say(f"Note:    ORAC wouldn't find {wanted!r}: VOICE has to match the start of the name, "
+                    f"capitals included. The probe is using {found.name()!r}.")
+        else:
+            say(f"Note:    no voice name starts with {wanted!r} ({source}).")
+            if not interactive:
+                sys.exit("Try --list-voices, or run the probe in a terminal to choose from the menu.")
+
+    if args.menu or (found is None and interactive):
+        return voice_menu(voices, found), "chosen from the menu"
+    if found is not None:
+        return found, source
+    personal = [v for v in voices if is_personal(v)]
+    if personal:
+        say("Note:    no voice chosen, so the first Personal Voice is used. Set VOICE, or use --voice or --menu.")
+        return personal[0], "first Personal Voice"
+    return None, "no voice chosen"
 
 
 def orac_ssml(text, rate, pitch, volume, emphasis):
@@ -206,9 +391,9 @@ def render(synth, utterance, path, timeout=60.0):
 class LLMLoad:
     """Streams a long reply from Ollama in the background, as ORAC does while it speaks."""
 
-    def __init__(self, model, host, system_prompt, num_ctx, num_batch):
+    def __init__(self, model, host, system_prompt, num_ctx, num_batch, keep_alive):
         self.model, self.host, self.system_prompt = model, host.rstrip("/"), system_prompt
-        self.num_ctx, self.num_batch = num_ctx, num_batch
+        self.num_ctx, self.num_batch, self.keep_alive = num_ctx, num_batch, keep_alive
         self.tokens, self.ttft = 0, None
         self.first_token, self.stop = threading.Event(), threading.Event()
         self.error = None
@@ -219,6 +404,7 @@ class LLMLoad:
         self.thread.start()
         while not self.first_token.wait(0.05):
             if self.error or not self.thread.is_alive() or time.perf_counter() - self.t0 > timeout:
+                self.stop.set()
                 raise RuntimeError(f"no token from Ollama: {self.error or 'timed out'}")
         return self.ttft
 
@@ -227,7 +413,8 @@ class LLMLoad:
         messages = [{"role": "user", "content": "Describe the Liberator's systems in exhaustive detail."}]
         if self.system_prompt:
             messages.insert(0, {"role": "system", "content": self.system_prompt})
-        body = {"model": self.model, "messages": messages, "stream": True, "think": False, "keep_alive": 14400,
+        body = {"model": self.model, "messages": messages, "stream": True, "think": False,
+                "keep_alive": self.keep_alive,
                 # Same runner options as ORAC, so a model ORAC loaded isn't reloaded for the probe
                 "options": {"num_ctx": self.num_ctx, "num_batch": self.num_batch, "num_predict": 800}}
         try:
@@ -247,14 +434,23 @@ class LLMLoad:
 
     def finish(self):
         self.stop.set()
-        self.thread.join(10)
+        if getattr(self, "thread", None):
+            self.thread.join(10)
         return self.tokens
+
+
+def ollama_version(host):
+    try:
+        import requests
+        return requests.get(f"{host.rstrip('/')}/api/version", timeout=3).json().get("version", "?")
+    except Exception:
+        return "?"
 
 
 def orac_system_prompt():
     """ORAC's own persona + databanks, so the model's prefill matches the real app."""
     try:
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, ORAC_DIR)
         from orac_personality import orac_personality
         from orac_data_core import data_core
         return f"{orac_personality.replace('{ORAC_NAME}', 'ORAC')}\n\n--- DATABANKS ---\n{data_core}"
@@ -262,48 +458,120 @@ def orac_system_prompt():
         return None
 
 
+def default_log_path(llm):
+    label = re.sub(r"[^A-Za-z0-9._-]+", "-", llm) if llm else "voice-only"
+    return os.path.join(PROBE_DIR, f"tts_probe_{datetime.now():%Y-%m-%d_%H%M}_{label}.txt")
+
+
+def ask_heard(what):
+    """How a test sounded, in the listener's words: 'flat', 'ok', a short note, or '-'."""
+    try:
+        answer = input(f"  How did the {what} sound? f = flat, o = ok, or a short note (Enter to skip): ").strip()
+    except EOFError:
+        return "-"
+    return {"f": "flat", "o": "ok"}.get(answer.lower(), answer) or "-"
+
+
 def fmt(value, unit="s", digits=2):
     return "-" if value is None else f"{value:.{digits}f}{unit}"
+
+
+def table(rows):
+    lines = [f"{'round':>5} {'mode':6} {'state':5} {'latency':>8} {'wall':>7} {'audio':>7} {'RTF':>6} "
+             f"{'decomp':>8} {'swapin':>7} {'free':>5} {'LLM 1st':>8}  heard"]
+    for row in rows:
+        r, delta = row["result"], row["delta"]
+        free = "-" if row["free"] is None else f"{row['free']}%"
+        lines.append(f"{row['round']:>5} {row['mode']:6} {row['state']:5} {fmt(r['latency']):>8} "
+                     f"{fmt(r['wall']):>7} {fmt(r.get('audio')):>7} {fmt(r.get('rtf'), 'x', 1):>6} "
+                     f"{delta['decomp']:>+8} {delta['swapin']:>+7} {free:>5} {fmt(row['ttft']):>8}  {row['heard']}")
+    return lines
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--text", default=DEFAULT_TEXT, help="sentence to speak, or SSML starting with <speak>")
     ap.add_argument("--ssml-file", help="read the text/SSML from this file")
-    ap.add_argument("--voice", help="part of a voice name (default: your Personal Voice, else the system voice)")
+    ap.add_argument("--voice", help="start of a voice name, as in ORAC's VOICE setting "
+                                    "(default: VOICE at the top of this file, else orac_chat.py's)")
+    ap.add_argument("--menu", action="store_true", help="choose the voice from a numbered list")
+    ap.add_argument("--list-voices", action="store_true", help="list every voice and exit")
     ap.add_argument("--rate", type=float, help="AVSpeechUtterance rate 0.0-1.0; only used with --plain")
     ap.add_argument("--plain", action="store_true", help="speak the text as-is, without ORAC's SSML wrapper")
-    ap.add_argument("--ssml-rate", default="114", help="ORAC SSML prosody rate, percent (default 114)")
-    ap.add_argument("--ssml-pitch", default="x-high", help="ORAC SSML prosody pitch (default x-high)")
-    ap.add_argument("--ssml-volume", default="loud", help="ORAC SSML prosody volume (default loud)")
-    ap.add_argument("--ssml-emphasis", default="strong", help='ORAC SSML emphasis level, "" to omit (default strong)')
-    ap.add_argument("--num-ctx", type=int, default=16384, help="must match ORAC's MODEL_MAX_TOKENS (default 16384)")
-    ap.add_argument("--num-batch", type=int, default=256, help="must match ORAC's OLLAMA_NUM_BATCH (default 256)")
+    ap.add_argument("--ssml-rate", help="SSML prosody rate, percent (default: orac_chat.py's SSML_RATE)")
+    ap.add_argument("--ssml-pitch", help="SSML prosody pitch (default: orac_chat.py's SSML_PITCH)")
+    ap.add_argument("--ssml-volume", help="SSML prosody volume (default: orac_chat.py's SSML_VOLUME)")
+    ap.add_argument("--ssml-emphasis", help='SSML emphasis level, "" to omit (default: orac_chat.py\'s SSML_EMPHASIS)')
+    ap.add_argument("--num-ctx", type=int, help="context size (default: orac_chat.py's MODEL_MAX_TOKENS)")
+    ap.add_argument("--num-batch", type=int, help="batch size (default: orac_chat.py's OLLAMA_NUM_BATCH)")
     ap.add_argument("--llm", metavar="MODEL", help="stream a reply from this Ollama model during each round")
     ap.add_argument("--host", default="http://localhost:11434", help="Ollama URL")
     ap.add_argument("--idle", type=float, default=90, help="seconds of silence before each round (default 90)")
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--no-play", action="store_true", help="don't play the cold renders back")
+    ap.add_argument("--no-ask", action="store_true", help="don't ask how each round sounded")
     ap.add_argument("--nap", action="store_true", help="allow App Nap (ORAC's behaviour before it opted out)")
-    ap.add_argument("--list-voices", action="store_true")
+    ap.add_argument("--log", metavar="FILE", help="where to save the results (default: a dated .txt next to this script)")
     args = ap.parse_args()
 
     if args.list_voices:
-        for voice in AVSpeechSynthesisVoice.speechVoices():
-            print(f"{voice.name():30} {voice.language():8} quality={voice.quality()} {voice.identifier()}")
+        voices = sorted(AVSpeechSynthesisVoice.speechVoices(), key=lambda v: (not is_personal(v), v.language(), v.name()))
+        for voice in voices:
+            kind = "Personal Voice" if is_personal(voice) else QUALITY.get(voice.quality(), "?")
+            print(f"{voice.name():32} {voice.language():8} {kind:15} {voice.identifier()}")
         return
 
+    log_path = args.log or default_log_path(args.llm)
+    if os.path.isdir(log_path):
+        log_path = os.path.join(log_path, os.path.basename(default_log_path(args.llm)))
+    report = Report(log_path)
+    report(f"ORAC TTS probe  ·  {datetime.now():%Y-%m-%d %H:%M:%S}")
+    report(machine_info())
+    orac = orac_settings()
+    if not orac:
+        report("Note:    couldn't read orac_chat.py, so the probe's own defaults are used.")
+    voice, voice_source = choose_voice(args, orac, report)
+
+    rate, rate_src = setting(args.ssml_rate, "SSML_RATE", orac)
+    pitch, pitch_src = setting(args.ssml_pitch, "SSML_PITCH", orac)
+    volume, volume_src = setting(args.ssml_volume, "SSML_VOLUME", orac)
+    emphasis, emphasis_src = setting(args.ssml_emphasis, "SSML_EMPHASIS", orac)
+    num_ctx, num_ctx_src = setting(args.num_ctx, "MODEL_MAX_TOKENS", orac)
+    num_batch, num_batch_src = setting(args.num_batch, "OLLAMA_NUM_BATCH", orac)
+    keep_alive, _ = setting(None, "OLLAMA_KEEP_ALIVE", orac)
+
+    def marked(label, value, source):
+        return f"{label} {value}" + ("" if source == "orac_chat.py" else f" ({source})")
+
     text = open(args.ssml_file, encoding="utf-8").read() if args.ssml_file else args.text
-    if not args.plain and not text.lstrip().startswith("<speak"):
-        text = orac_ssml(text, args.ssml_rate, args.ssml_pitch, args.ssml_volume, args.ssml_emphasis)
+    spoken = text
+    if args.plain:
+        ssml_line = "none (--plain)"
+    elif text.lstrip().startswith("<speak"):
+        ssml_line = "as given in the text"
+    else:
+        ssml_line = ", ".join([marked("rate", f"{rate}%", rate_src), marked("pitch", pitch, pitch_src),
+                               marked("volume", volume, volume_src),
+                               marked("emphasis", emphasis or "none", emphasis_src)])
+        text = orac_ssml(text, rate, pitch, volume, emphasis)
         args.rate = None                # SSML carries the rate
-    try:
-        status = int(AVSpeechSynthesizer.personalVoiceAuthorizationStatus())
-        print(f"Personal Voice authorisation: {AUTH_STATUS.get(status, status)}")
-    except AttributeError:
-        pass
-    voice = pick_voice(args.voice)
-    print(f"Voice: {voice.name() if voice is not None else 'system default'}")
+
+    report(f"Voice:   {describe(voice)}  ({voice_source})")
+    if voice is not None:
+        report(f"         {voice.identifier()}")
+    report(f"Personal Voice authorisation: {personal_voice_auth()}")
+    if orac.get("USE_PERSONAL_VOICE") is False:
+        report("Note:    orac_chat.py has USE_PERSONAL_VOICE = False, so ORAC speaks with NSSpeechSynthesizer;"
+               " this probe tests AVSpeechSynthesizer.")
+    report(f"SSML:    {ssml_line}")
+    report(f"Text:    {spoken}")
+    if args.llm:
+        report(f"LLM:     {args.llm} on Ollama {ollama_version(args.host)}  ("
+               f"{marked('num_ctx', num_ctx, num_ctx_src)}, {marked('num_batch', num_batch, num_batch_src)})")
+    else:
+        report("LLM:     none (voice only)")
+    report(f"Rounds:  {args.rounds}, each after {args.idle:.0f} s idle  ·  App Nap {'allowed' if args.nap else 'off'}")
+    report("Settings are ORAC's own (orac_chat.py) unless marked.")
 
     activity = None
     if not args.nap:
@@ -317,55 +585,81 @@ def main():
     synth.setDelegate_(times)
     out_dir = tempfile.mkdtemp(prefix="orac_tts_probe_")
     system_prompt = orac_system_prompt() if args.llm else None
-    rows = []
+    ask = not args.no_ask and sys.stdin.isatty()
+    rows, load = [], None
 
-    for rnd in range(1, args.rounds + 1):
-        with objc.autorelease_pool():
-            print(f"\nRound {rnd}/{args.rounds}: idling {args.idle:.0f}s so the voice goes cold ...", flush=True)
-            time.sleep(args.idle)
+    try:
+        for rnd in range(1, args.rounds + 1):
+            with objc.autorelease_pool():
+                print(f"\nRound {rnd}/{args.rounds}: idling {args.idle:.0f}s so the voice goes cold ...", flush=True)
+                time.sleep(args.idle)
 
-            load, ttft = None, None
-            if args.llm:
-                load = LLMLoad(args.llm, args.host, system_prompt, args.num_ctx, args.num_batch)
-                try:
-                    ttft = load.start()
-                except RuntimeError as e:
-                    sys.exit(f"Ollama ({args.host}, {args.llm}): {e}")
-                print(f"  {args.llm} streaming (first token after {ttft:.2f}s)")
+                ttft = None
+                if args.llm:
+                    load = LLMLoad(args.llm, args.host, system_prompt, num_ctx, num_batch, keep_alive)
+                    try:
+                        ttft = load.start()
+                    except RuntimeError as e:
+                        load = None
+                        report(f"Round {rnd}: Ollama ({args.host}, {args.llm}): {e}")
+                        break
+                    print(f"  {args.llm} streaming (first token after {ttft:.2f}s)")
 
-            order = ("live", "render") if rnd % 2 else ("render", "live")
-            render_path = os.path.join(out_dir, f"round{rnd}_render.caf")
-            for position, mode in enumerate(order):
-                temperature = "cold" if position == 0 else "warm"
-                before, free_pct = vm_counters(), free_memory_pct()
-                utterance = make_utterance(text, voice, args.rate)
-                if mode == "live":
-                    print(f"  LIVE ({temperature}) - listen now", flush=True)
-                    result = speak_live(synth, times, utterance)
-                else:
-                    result = render(synth, utterance, render_path)
-                    if not result["audio"]:
-                        print("  RENDER produced no audio: this voice may not support offline rendering")
-                after = vm_counters()
-                delta = {k: after.get(k, 0) - before.get(k, 0) for k in ("decomp", "swapin")}
-                rows.append((rnd, mode, temperature, result, delta, free_pct, ttft))
+                order = ("live", "render") if rnd % 2 else ("render", "live")
+                render_path = os.path.join(out_dir, f"round{rnd}_render.caf")
+                tests = {}
+                for position, mode in enumerate(order):
+                    temperature = "cold" if position == 0 else "warm"
+                    before, free_pct = vm_counters(), free_memory_pct()
+                    utterance = make_utterance(text, voice, args.rate)
+                    if mode == "live":
+                        print(f"  LIVE ({temperature}) - listen now", flush=True)
+                        result = speak_live(synth, times, utterance)
+                    else:
+                        result = render(synth, utterance, render_path)
+                        if not result["audio"]:
+                            report(f"Round {rnd}: RENDER produced no audio (this voice may not support offline rendering)")
+                    after = vm_counters()
+                    tests[mode] = {"round": rnd, "mode": mode, "state": temperature, "result": result,
+                                   "delta": {k: after.get(k, 0) - before.get(k, 0) for k in ("decomp", "swapin")},
+                                   "free": free_pct, "ttft": ttft, "heard": "-"}
+                    rows.append(tests[mode])
 
-            tokens = load.finish() if load else None
-            if tokens is not None:
-                print(f"  (LLM streamed {tokens} chunks during the round)")
-            if order[0] == "render" and not args.no_play and os.path.exists(render_path):
-                print("  Playing the COLD render - compare with round 1's live speech", flush=True)
-                subprocess.run(["afplay", render_path])
+                chunks = load.finish() if load else None
+                load = None
+                played = False
+                if order[0] == "render" and not args.no_play and os.path.exists(render_path):
+                    print("  Playing the COLD render - compare with round 1's live speech", flush=True)
+                    subprocess.run(["afplay", render_path])
+                    played = True
+                if ask:
+                    tests["live"]["heard"] = ask_heard(f"{tests['live']['state']} LIVE speech")
+                    if played:
+                        tests["render"]["heard"] = ask_heard("cold RENDER playback")
+                if args.llm:
+                    report(f"Round {rnd}: {args.llm} first token after {ttft:.2f}s, {chunks} chunks streamed during the tests")
+                report.save()
+    except KeyboardInterrupt:
+        report("\nStopped early (Ctrl+C): the results so far are below.")
+        synth.stopSpeakingAtBoundary_(0)        # AVSpeechBoundaryImmediate
+        if load:
+            load.finish()
 
-    print(f"\n{'round':>5} {'mode':6} {'state':5} {'latency':>8} {'wall':>7} {'audio':>7} {'RTF':>6} "
-          f"{'decomp':>8} {'swapin':>7} {'free':>5}")
-    for rnd, mode, temperature, r, delta, free_pct, ttft in rows:
-        print(f"{rnd:>5} {mode:6} {temperature:5} {fmt(r['latency']):>8} {fmt(r['wall']):>7} "
-              f"{fmt(r.get('audio')):>7} {fmt(r.get('rtf'), 'x', 1):>6} {delta['decomp']:>+8} "
-              f"{delta['swapin']:>+7} {('-' if free_pct is None else str(free_pct) + '%'):>5}")
-    print(f"\nRenders saved in {out_dir} (play with: afplay <file>)")
+    report()
+    for line in table(rows):
+        report(line)
+    report()
+    report(LEGEND)
+    report()
+    report(f"Renders saved in {out_dir} (play with: afplay <file>)")
+    report.save()
+    if report.path:
+        print(f"Results saved to {report.path}")
     del activity
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelled.")

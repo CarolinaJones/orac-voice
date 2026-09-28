@@ -1,0 +1,6 @@
+# Results saved by extras/tts_probe.py
+extras/tts_probe_*.txt
+
+# Created when ORAC runs
+__pycache__/
+ollama_debug.log

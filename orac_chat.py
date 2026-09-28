@@ -1137,10 +1137,10 @@ class MacTTS:
         with objc.autorelease_pool():
             if USE_PERSONAL_VOICE:
                 self.synth = AVSpeechSynthesizer.alloc().init()
-                for voice in AVSpeechSynthesisVoice.speechVoices():
-                    if voice.name().startswith(VOICE):
-                        self.personal_voice = voice
-                        break
+                voices = AVSpeechSynthesisVoice.speechVoices()
+                exact = [voice for voice in voices if voice.name() == VOICE]
+                starts = [voice for voice in voices if voice.name().startswith(VOICE)]
+                self.personal_voice = (exact or starts or [None])[0]    # A full name wins: "ORAC" mustn't pick "ORAC 2" listed first
                 if self.personal_voice:
                     log_error(f"Personal Voice selected: {self.personal_voice.name()} ({self.personal_voice.identifier()})")
                 else:
