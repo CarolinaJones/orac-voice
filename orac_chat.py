@@ -95,6 +95,7 @@ SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to o
 
 MIN_FIRST_UTTERANCE_WORDS = 4						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
 SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
+VOICE_WARMUP = True									# Speak one line silently at start-up, so the voice's own start-up stall happens during boot, not in the first reply
 
 voice_pitch = 72 									# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 188										# Only works on SYNTH Speech Rate
@@ -1118,6 +1119,20 @@ class MacTTS:
         utterance.setVolume_(volume)
         return utterance
 
+    def _warm_up(self):
+        """ The voice's first live sentence stalls while it starts up (tts_probe: 7.9-8.1 s instead of 6.6 s,
+            and the first word lost with MLX), so one line is spoken silently while ORAC boots. """
+        started = time.time()
+        self.synth.speakUtterance_(self._build_utterance("Logic arrays online.", volume=0.0))
+        seen_speaking = False
+        while state.running and time.time() - started < 10:
+            if self.synth.isSpeaking():
+                seen_speaking = True
+            elif seen_speaking or time.time() - started > 1.5:
+                break
+            time.sleep(0.05)
+        log_error(f"Voice warm-up: {time.time() - started:.1f}s")
+
     def _speak_and_wait(self, utterance):
         """ Speaks one AVSpeechUtterance and blocks until it's done, honoring interruption.
         Same start/stop wait shape as the NSSpeechSynthesizer branch below. """
@@ -1146,6 +1161,7 @@ class MacTTS:
                 else:
                     log_error(f"Personal Voice requested, '{VOICE}' not found.")
                     log_error("Check spelling or ensure Personal Voice is authorized on this Terminal.")
+                if VOICE_WARMUP: self._warm_up()
             else:
                 self.synth = NSSpeechSynthesizer.alloc().init()
                 self.synth.setRate_(S_RATE)

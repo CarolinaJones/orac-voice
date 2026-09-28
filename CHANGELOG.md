@@ -33,6 +33,10 @@ A performance, reliability and tidy-up release. You don't need to change any set
   turns.
 - **Fixed:** "I'm" and "I'd" were spoken as "I, m" and "I, d" because of the pause added after
   "I".
+- **Voice warm-up at start-up (`VOICE_WARMUP`, on by default).** One line is spoken silently while
+  ORAC boots. In `tts_probe`, the voice's first live sentence took 7.9 to 8.1 s instead of 6.6 s (and
+  lost its first word with MLX), with either model; that start-up cost now happens during boot
+  instead of in the first reply. The probe's `--warm-up` option measures the difference.
 - **Exact voice name wins.** With several Personal Voices, `VOICE = "ORAC Personal Voice"` could
   pick "ORAC Personal Voice 2" if macOS listed that one first, and no `VOICE` value could avoid it.
   A voice with exactly the `VOICE` name is now chosen first.

@@ -782,6 +782,8 @@ def main():
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--no-play", action="store_true", help="don't play the cold renders back")
     ap.add_argument("--no-ask", action="store_true", help="don't ask how each round sounded")
+    ap.add_argument("--warm-up", action="store_true",
+                    help="speak one line silently before round 1, as ORAC does at start-up (VOICE_WARMUP)")
     ap.add_argument("--nap", action="store_true", help="allow App Nap (ORAC's behaviour before it opted out)")
     ap.add_argument("--voice-check", "--ssml-check", dest="ssml_check", action="store_true",
                     help="which SSML/utterance settings the voice obeys, and whether a phrase said first changes it")
@@ -800,6 +802,8 @@ def main():
         sys.exit("--voice-check needs a plain sentence (it adds the SSML itself).")
 
     label = "voice-check" if args.ssml_check else args.llm
+    if args.warm_up and not args.ssml_check:
+        label = f"{label or 'voice-only'}_warm-up"
     log_path = args.log or default_log_path(label)
     if os.path.isdir(log_path):
         log_path = os.path.join(log_path, os.path.basename(default_log_path(label)))
@@ -884,6 +888,12 @@ def main():
     system_prompt = orac_system_prompt() if args.llm else None
     ask = not args.no_ask and sys.stdin.isatty()
     rows, load = [], None
+    if args.warm_up:
+        line = "Logic arrays online."           # ORAC's start-up line
+        utterance = make_utterance(line if args.plain else orac_ssml(line, rate, pitch, volume, emphasis), voice, args.rate)
+        utterance.setVolume_(0.0)
+        warm = speak_live(synth, times, utterance)
+        report(f"Warm-up: {line!r} spoken silently before round 1 (took {warm['wall']:.2f}s)")
 
     try:
         for rnd in range(1, args.rounds + 1):
