@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #==================================================================================================#
 #                                       O R A C - V O I C E                                        #
-#                               v1.9.4.2  ·  Lore friendly VoiceChat                               #
+#                               v1.9.4.3  ·  Lore friendly VoiceChat                               #
 #                   AVSpeechUtterance / SSML voice  ·  gemma4:12b (GGUF or MLX)                    #
 #                                 Copyright © 2026 Caroline Mayne                                  #
 #                                https://github.com/CarolinaJones/                                 #
@@ -64,22 +64,22 @@ USER_NAME = "Jenna" 								# USER Name and Identity
 ORAC_NAME = "ORAC"									# ORAC's Name
 
 HEADLESS_MODE = False                               # Set True to disable Terminal UI rendering (No Video Monitor)
+DEBUG_MODE = True									# Start with Debug Mode enabled
 TEXT_ONLY_MODE = False								# Enables/Disables Text only entry
 
-TELETYPE_MODE = False                               # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
 U1 = 0.038											# Teletype Speed
 U2 = 0.042											# Teletype Uniformity
 
-DEBUG_START = True									# Start with Debug Mode enabled
 WAFFLE_MODE = False									# Allows ORAC to talk at length about his favorite topics
 
 # H A R D W A R E  S E T T I N G S #
 
-USE_LCD = True                                      # Enable Forenove 1602 I2C LCD via Pi Pico
+USE_LCD = False                                     # Enable Forenove 1602 I2C LCD via Pi Pico
 LCD_PORT = "/dev/cu.usbmodem3101"                   # Serial port for Pico
 LCD_BAUD = 115200                                   # Pico serial baud rate
 
-USE_ACTIVATOR = True                                # Enable the Physical Hardware Lock Key on Pico GPIO 15
+USE_ACTIVATOR = False                                # Enable the Physical Hardware Lock Key on Pico GPIO 15
 
 NIC = "en1"											# Physical Network Interface for enable/disable networking
 
@@ -256,7 +256,7 @@ def log_error(msg):
         pass
 
 def debug_log(msg):
-    """ Diagnostics for ollama_debug.log (timings, warm-ups), written only in debug mode: DEBUG_START, or
+    """ Diagnostics for ollama_debug.log (timings, warm-ups), written only in debug mode: DEBUG_MODE, or
         Option+D. Errors always go through log_error. """
     if state.debug: log_error(msg)
 
@@ -443,8 +443,8 @@ class OracState:
         self.cached_ram = " 0.0%"
         self.term_cols = TERMINAL_COLS
         self.term_rows = TERMINAL_ROWS
-        self.debug = DEBUG_START
-        self.debug_col = RESET if DEBUG_START else DIM
+        self.debug = DEBUG_MODE
+        self.debug_col = RESET if DEBUG_MODE else DIM
         self.sounds = {}              
         for name, path in {
             "s_ready": SOUND_READY,
@@ -462,7 +462,7 @@ class OracState:
 
 state = OracState()
 
-# Opt out of App Nap and timer coalescing while ORAC idles between turns.
+# Opt out of App Nap and timer coalescing while ORAC idles between turns. #
 try:
     from Foundation import NSProcessInfo, NSActivityUserInitiatedAllowingIdleSystemSleep, NSActivityLatencyCritical
     _process_activity = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
@@ -568,22 +568,27 @@ def save_archival_memory():
         with archive_lock:
             os.makedirs(ARCHIVE_DIR, exist_ok=True)
             today = datetime.now().strftime("%Y-%m-%d")
-            archive_path = os.path.join(ARCHIVE_DIR, f"orac_archive_{today}.json")
+            by_day = {}
+            for e in user_logs:
+                by_day.setdefault(e[1][:10] or today, []).append(e)
 
-            existing_log = []
-            if os.path.exists(archive_path):
-                try:
-                    with open(archive_path, 'r', encoding='utf-8') as f:
-                        existing_log = json.load(f).get('log', [])
-                except Exception:
-                    try: os.replace(archive_path, archive_path + f".corrupt-{int(time.time())}")
-                    except Exception: pass
-                    existing_log = []
+            for day, day_logs in by_day.items():
+                archive_path = os.path.join(ARCHIVE_DIR, f"orac_archive_{day}.json")
 
-            seen = {(e[0], e[1]) for e in existing_log if isinstance(e, (list, tuple)) and len(e) >= 2}
-            new_items = [e for e in user_logs if (e[0], e[1]) not in seen]
-            if new_items:
-                _atomic_write_json(archive_path, {'log': existing_log + new_items})
+                existing_log = []
+                if os.path.exists(archive_path):
+                    try:
+                        with open(archive_path, 'r', encoding='utf-8') as f:
+                            existing_log = json.load(f).get('log', [])
+                    except Exception:
+                        try: os.replace(archive_path, archive_path + f".corrupt-{int(time.time())}")
+                        except Exception: pass
+                        existing_log = []
+
+                seen = {(e[0], e[1]) for e in existing_log if isinstance(e, (list, tuple)) and len(e) >= 2}
+                new_items = [e for e in day_logs if (e[0], e[1]) not in seen]
+                if new_items:
+                    _atomic_write_json(archive_path, {'log': existing_log + new_items})
 
     except Exception as e:
         log_error(f"save_archival_memory: {type(e).__name__}: {e}")
@@ -1130,7 +1135,7 @@ class MacTTS:
     def _warm_up(self):
         started = time.time()
         utterance = AVSpeechUtterance.speechUtteranceWithSSMLRepresentation_(
-            '<speak><prosody volume="silent">I find your discourse, tedious.</prosody></speak>')
+            '<speak><prosody volume="silent">I find your discourse irritatingly, tiresome.</prosody></speak>')
         if not utterance:
             return
         if self.personal_voice: utterance.setVoice_(self.personal_voice)
@@ -1167,12 +1172,12 @@ class MacTTS:
                 exact = [voice for voice in voices if voice.name() == VOICE]
                 starts = [voice for voice in voices if voice.name().startswith(VOICE)]
                 self.personal_voice = (exact or starts or [None])[0]
-                if self.personal_voice:
-                    log_error(f"Personal Voice selected: {self.personal_voice.name()} ({self.personal_voice.identifier()})")
-                else:
+                if not self.personal_voice:
                     log_error(f"Personal Voice requested, '{VOICE}' not found.")
                     log_error("Check spelling or ensure Personal Voice is authorized on this Terminal.")
+                
                 if VOICE_WARMUP: self._warm_up()
+                
             else:
                 self.synth = NSSpeechSynthesizer.alloc().init()
                 self.synth.setRate_(S_RATE)
@@ -1481,6 +1486,8 @@ def is_hallucination(text, no_speech=1.0):
 
 def parse_time_command(text):
     clean_text = text.lower()
+    if re.search(r'\bcancel\b(?:\s+\w+){0,3}?\s+(?:alarm|timer)s?\b', clean_text):
+        return -1, None
     word_to_num = {
         "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
         "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -1521,9 +1528,7 @@ def parse_time_command(text):
             return target.timestamp(), target.strftime('%H:%M')
         except ValueError:
             return None, None
-        
-    if "cancel alarm" in clean_text or "cancel timer" in clean_text:
-        return -1, None
+
     return None, None
 
 #==================================================================================================#
@@ -1603,7 +1608,6 @@ signal.signal(signal.SIGHUP, _handle_terminate)
 def alarm_worker(trigger_epoch, tts):
     while state.running and state.alarm_trigger_epoch == trigger_epoch:
         if time.time() >= trigger_epoch:
-            # Let a reply in progress finish (and wait out a removed key) rather than talking over it
             while state.running and state.alarm_trigger_epoch == trigger_epoch and (
                     state.is_processing.is_set() or state.is_speaking.is_set() or not tts.is_idle()
                     or (USE_ACTIVATOR and not state.key_inserted)):
@@ -1781,7 +1785,8 @@ def process_system_command(user_text, tts, teletype):
         with state.hist_lock:
             state.history.clear()
             state.history_gen += 1
-            state.full_message_log.clear()                     
+            state.full_message_log.clear()
+            state.loaded_archives.clear()
         if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
 
         if TELETYPE_MODE:
@@ -2555,6 +2560,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
         with state.hist_lock:
             if state.history_gen == prune_gen and (epoch_id is None or state.stream_epoch == epoch_id):
                 state.history = remaining_hist
+                state.loaded_archives.clear()
             else:
                 remaining_hist = None
             
@@ -3081,7 +3087,7 @@ def run_local_bot():
         threading.Thread(target=serial_reader_worker, daemon=True).start()
     
     startup_animation()
-    threading.Thread(target=speak_now, args=(teletype,), daemon=True).start()    # Only once the key state is known and the UI is drawn
+    threading.Thread(target=speak_now, args=(teletype,), daemon=True).start() # Only once the key state is known and the UI is drawn
     threading.Thread(target=ui_refresh_worker, daemon=True).start() 
     
     needs_prompt = True
@@ -3202,7 +3208,7 @@ def run_local_bot():
                         heard = f"Heard {user_text!r} ({whisper_confidence(result)})"
                         no_speech = whisper_no_speech(result)
 
-                        threading.Timer(0.4, lambda: mx.clear_cache()).start() # Seems to work better with the timer!
+                        # threading.Timer(0.4, lambda: mx.clear_cache()).start() # Seems to work better with the timer! or not?
                         
                         t_transcribed = time.time()
                         state.last_stt_time = f"{t_transcribed - t_start:.2f}s"

@@ -5,6 +5,14 @@ and never pushed, so they are included under 1.9.3.
 
 ---
 
+## v1.9.4.3 (2026-09-30)
+
+Fix to the Timer function: Let a reply in progress finish (and wait out a removed key) rather than talking over it.
+
+Issue with archiving noted in relation to time of day: Resolved.
+
+Minor bug fixes.
+
 ## v1.9.4.2 (2026-09-29)
 
 Added variable, PRELOAD_LLM. When set to ‘False', this is useful while using gemma4:12b-mlx, which seems to load the model again regardless of prior, preload.
