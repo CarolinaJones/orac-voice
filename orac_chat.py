@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #==================================================================================================#
 #                                       O R A C - V O I C E                                        #
-#                              v1.9.4.1  ·  Lore friendly VoiceChat                                #
+#                               v1.9.4.2  ·  Lore friendly VoiceChat                               #
 #                   AVSpeechUtterance / SSML voice  ·  gemma4:12b (GGUF or MLX)                    #
 #                                 Copyright © 2026 Caroline Mayne                                  #
 #                                https://github.com/CarolinaJones/                                 #
@@ -66,7 +66,7 @@ ORAC_NAME = "ORAC"									# ORAC's Name
 HEADLESS_MODE = False                               # Set True to disable Terminal UI rendering (No Video Monitor)
 TEXT_ONLY_MODE = False								# Enables/Disables Text only entry
 
-TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+TELETYPE_MODE = False                               # Set False for "Compact" mode (Voice only, minimal 8-row UI)
 U1 = 0.038											# Teletype Speed
 U2 = 0.042											# Teletype Uniformity
 
@@ -85,7 +85,7 @@ NIC = "en1"											# Physical Network Interface for enable/disable networking
 
 # V O I C E  S E T T I N G S #
 
-USE_PERSONAL_VOICE = True							# Use The Apple Personal Voice
+USE_PERSONAL_VOICE = True							# Use an Apple Personal Voice
 VOICE = "ORAC Personal Voice" 						# Apple Personal Voice Name or Synth Voice Name
 
 SSML_RATE = 114            							# percent
@@ -118,14 +118,16 @@ TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 
 # M O D E L  S E T T I N G S #
 
-OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Using while waiting for Ollama/gemma mlx bug fix
-#OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
+#OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Using while waiting for Ollama/gemma mlx bug fix
+OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
 #OLLAMA_MODEL = 'gemma4:31b-cloud'					# Cloud based gemma4
 
 OLLAMA_TIMEOUT = 120								# Seconds of silence from Ollama before a request is abandoned
 OLLAMA_NUM_BATCH = 256								# One value for every chat() call, so Ollama never sees differing runner options
 OLLAMA_KEEP_ALIVE = 14400							# Seconds the model stays loaded between requests (4h)
+PRELOAD_LLM = False									# Preload model on boot. False is useful for gemma4:12b-mlx loading the model after boot, preload
 UNLOAD_ON_EXIT = True								# Free the model's memory when ORAC closes. False keeps it loaded, so a restart is ready in seconds
+
 
 ollama_client = Client(timeout=OLLAMA_TIMEOUT)
 
@@ -138,7 +140,7 @@ HEADER_UPDATE_INTERVAL = 5.0						# Update Header Interval
 
 # T T S  D E B U G I N G #
 
-MIN_FIRST_UTTERANCE_WORDS = 0						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
+MIN_FIRST_UTTERANCE_WORDS = 2						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
 SENTENCES_PER_UTTERANCE = 1							# After the first: 1 = speak each sentence as soon as it's written; 2 = wait for pairs (up to 2 s of silence)
 SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
 VOICE_WARMUP = True									# Speak one line silently at start-up, so the voice's own start-up stall happens during boot, not in the first reply
@@ -333,7 +335,7 @@ SYSTEM_INSTRUCTION = (
  f"Speaking as {ORAC_NAME} using 1st-person pronouns.\n"
  f"Addressing the biological entity [USER] ONLY using 2nd-person pronouns.\n"
  f"Natively conjugating verbs for the 2nd-person.\n"
- f"Concealing the tag '[USER]'. Withholding the name '{USER_NAME}' unless explicitly asked."
+ f"Concealing the tag '[USER]'."
 )
 
 # T O K E N I Z E R  &  R U N N E R  O P T I O N S #
@@ -634,7 +636,6 @@ def setup_terminal():
 
 def update_token_health():
     with state.hist_lock:
-        # Cached per message, so recounting every time is cheap
         state.current_tokens = state._cached_token_base + sum(count_tokens(msg['content']) for msg in state.history)
 
     percent = state.current_tokens / MODEL_MAX_TOKENS if MODEL_MAX_TOKENS > 0 else 0.0
@@ -676,8 +677,9 @@ def idle_status():
         return "● TEXT SELECTION MODE ACTIVE (OPT+T to exit)", A
     if state.mic_muted:
         return "● MICROPHONE MUTED (Option+M to un-mute)", R
-    if not state.model_ready.is_set() and not state.is_processing.is_set():
-        return "● ACCESSING TARIAL MATRIX...", A
+    if PRELOAD_LLM:
+        if not state.model_ready.is_set() and not state.is_processing.is_set():
+            return "● ACCESSING TARIAL MATRIX...", A
     if state.is_processing.is_set():
         return "● ORAC ONLINE: PROCESSING...", A
     if state.is_speaking.is_set():
@@ -1164,7 +1166,7 @@ class MacTTS:
                 voices = AVSpeechSynthesisVoice.speechVoices()
                 exact = [voice for voice in voices if voice.name() == VOICE]
                 starts = [voice for voice in voices if voice.name().startswith(VOICE)]
-                self.personal_voice = (exact or starts or [None])[0]    # A full name wins: "ORAC" mustn't pick "ORAC 2" listed first
+                self.personal_voice = (exact or starts or [None])[0]
                 if self.personal_voice:
                     log_error(f"Personal Voice selected: {self.personal_voice.name()} ({self.personal_voice.identifier()})")
                 else:
@@ -1195,7 +1197,6 @@ class MacTTS:
                         item_pending = False
                         continue
 
-                    quiet = f"{time.time() - state.tts_last_active:.1f}s quiet before" if state.tts_last_active else "first since start-up"
                     state.is_speaking.set()
                     state.tts_last_active = time.time()
                     
@@ -1215,7 +1216,6 @@ class MacTTS:
                                     break
                                 time.sleep(0.1)
 
-                    debug_log(f"Said {text!r} ({time.time() - state.tts_last_active:.1f}s; {quiet}{'; interrupted' if state.is_interrupted.is_set() else ''})")   # tts_probe.py --from-log replays these
                     time.sleep(0.1)
                     state.tts_last_active = time.time()
                     
@@ -2809,9 +2809,7 @@ def start_response(user_text, tts, teletype):
         with state.terminal_lock:
             sys.stdout.write(f"\r\033[2K{B}{IT}{USER_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
             sys.stdout.flush()
-
-    # Discard the request if the activator key was pulled mid-sentence. (Checked before clearing
-    # is_interrupted, which must stay set while the key is out.)
+            
     if USE_ACTIVATOR and not state.key_inserted:
         return
 
@@ -3043,7 +3041,9 @@ def run_local_bot():
     recognizer.non_speaking_duration = 0.3 
     recognizer.phrase_threshold = 0.5 
 
-    threading.Thread(target=preload_model, daemon=True).start()
+    if PRELOAD_LLM:
+        threading.Thread(target=preload_model, daemon=True).start()
+        
     if not TEXT_ONLY_MODE: threading.Thread(target=warm_up_whisper, daemon=True).start()
 
     tts = MacTTS()
@@ -3143,7 +3143,6 @@ def run_local_bot():
                                 time.sleep(0.05)
 
                         user_text = state.input_queue.get()
-                        debug_log(f"Typed {user_text!r}")
                         
                         if process_system_command(user_text, tts, teletype):
                             continue

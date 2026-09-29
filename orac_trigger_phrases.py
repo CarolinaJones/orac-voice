@@ -22,7 +22,7 @@ trigger_phrases = {
     
     "MENIAL_TASK_PHRASES": (
         "set a course",
-        "set course",              # [P9] Whisper often drops the "a"
+        "set course",
         "lay in a course",
         "lay in course",
         "operate the teleport",
@@ -30,9 +30,6 @@ trigger_phrases = {
         "engage the teleport",
     ),
     
-    # [P9] These used to include bare "summarize", "summarise", "recap" and "remind me", so once a chat was 3+ turns deep
-    #      "Summarize the events on Cygnus Alpha" or "remind me who Travis is" was answered as a recap of the CONVERSATION.
-    #      Every phrase below now says explicitly that it is about the conversation.
     "PAST_MEMORY": (
         "what did we talk about",
         "what were we talking about",

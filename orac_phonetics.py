@@ -13,7 +13,7 @@ import re
 
 def _preserve_case(match, replacement):
     original_word = match.group()
-    if original_word.istitle(): return replacement[:1].upper() + replacement[1:]   # [P4] was .capitalize(), which lowercased the rest ("Star One" -> "Star-one")
+    if original_word.istitle(): return replacement[:1].upper() + replacement[1:]
     elif original_word.isupper(): return replacement.upper()
     return replacement
 
@@ -139,9 +139,6 @@ _raw_corrections = {
 def _literal_len(pattern):
     return len(pattern.replace(r"\b", ""))
 
-# [P4] Substitutions run in order, so a short entry used to shadow a longer one that contains it:
-#      \bexiled\b hit "self-exiled" and \bimplant\b hit "neural-implant" before their own entries could ever match.
-#      Longest literal first (sorted() is stable, so equal lengths keep your original order).
 COMPILED_CORRECTIONS = [
     (re.compile(pattern, flags=re.IGNORECASE), phonetic) 
     for pattern, phonetic in sorted(_raw_corrections.items(), key=lambda kv: _literal_len(kv[0]), reverse=True)
