@@ -1871,7 +1871,7 @@ def handle_activator_change(is_in):
             
         processing_sound.stop()
         play_orac_fx("s_shutdown")
-        set_status("● SYSTEM LOCKED: ACTIVATOR REMOVED", R)
+        set_status(*idle_status())
         update_lcd_display()
         
     else:
@@ -2211,7 +2211,7 @@ def startup_animation():
                 sys.stdout.write("\033[2J\033[?25l")
                 sys.stdout.flush()
         draw_ui()
-        set_status("● SYSTEM SECURED: ACTIVATOR KEY REMOVED", R)
+        set_status(*idle_status())
         return
     
     if not HEADLESS_MODE:
@@ -3051,7 +3051,6 @@ def run_local_bot():
     
     state.tts_engine = tts # Gives the key access to shut ORAC up!
 
-    threading.Thread(target=speak_now, args=(teletype,), daemon=True).start()
     threading.Thread(target=keyboard_listener, args=(tts, teletype), daemon=True).start()
     
     if USE_ACTIVATOR and serial_port and serial_port.is_open:
@@ -3082,6 +3081,7 @@ def run_local_bot():
         threading.Thread(target=serial_reader_worker, daemon=True).start()
     
     startup_animation()
+    threading.Thread(target=speak_now, args=(teletype,), daemon=True).start()    # Only once the key state is known and the UI is drawn
     threading.Thread(target=ui_refresh_worker, daemon=True).start() 
     
     needs_prompt = True

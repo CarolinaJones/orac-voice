@@ -9,6 +9,10 @@ and never pushed, so they are included under 1.9.3.
 
 Added variable, PRELOAD_LLM. When set to ‘False', this is useful while using gemma4:12b-mlx, which seems to load the model again regardless of prior, preload.
 
+Fixed: "SYSTEM LOCKED" no longer flashes up at start-up before the screen clears. The status line now
+starts once the Pico has reported the activator key and the UI is drawn, and the locked message reads the
+same throughout.
+
 
 ## v1.9.4.1 (2026-09-28)
 

@@ -1032,7 +1032,8 @@ def why_nothing_said(path, orac):
     except OSError:
         logs_speech = True                  # Can't tell
     if not logs_speech:
-        return "The orac_chat.py next to this probe doesn't log what ORAC says yet: pull the latest wip first."
+        return ("The orac_chat.py next to this probe doesn't log what ORAC says (\"Said\" lines), so there's "
+                "nothing for --from-log to read.")
     if orac.get("DEBUG_START") is False:
         return ("DEBUG_START is False in orac_chat.py, so ORAC doesn't log what it says: set it to True (or press "
                 "Option+D while ORAC runs), talk to ORAC, quit, then run this again.")
