@@ -1,0 +1,62 @@
+# FLIP FLOP
+
+elif state == "PROC":
+            for i in range(12):
+                leds[i].value(1 if i % 2 == 0 else 0)
+            for _ in range(10):
+                if current_state != "PROC": break
+                time.sleep(0.1)               
+            if current_state != "PROC": continue
+            # Step 2: Evens OFF, Odds ON
+            for i in range(12):
+                leds[i].value(0 if i % 2 == 0 else 1)
+            for _ in range(10):
+                if current_state != "PROC": break
+                time.sleep(0.1)
+
+# Slow single orbit
+            for i in range(12):
+                if current_state != "IDLE": break
+                for led in leds: led.value(0)
+                leds[i].value(1)
+                time.sleep(0.15)
+
+# Fast Double-Orbit (2 LEDs spinning opposite each other)
+            for i in range(12):
+                if current_state != "PROC": break
+                for led in leds: led.value(0)
+                leds[i].value(1)
+                leds[(i + 6) % 12].value(1) # Opposite side
+                time.sleep(0.04)
+
+# Classic 70s/80s sci-fi random scattering
+            for led in leds:
+                led.value(random.choice([0, 1]))
+            time.sleep(random.uniform(0.05, 0.12))
+
+# Rapid flashing (Timers or Input Required)
+            for led in leds: led.value(1)
+            time.sleep(0.1)
+            for led in leds: led.value(0)
+            time.sleep(0.1)
+
+# Slow heartbeat (Muted)
+            for led in leds: led.value(1)
+            time.sleep(0.1)
+            for led in leds: led.value(0)
+            time.sleep(1.9)
+
+# Knight Rider
+            # Sweeps forward
+            for i in range(12):
+                if current_state != "IDLE": break
+                for led in leds: led.value(0)
+                leds[i].value(1)
+                time.sleep(0.08)
+                
+            # Sweeps backward (skipping the ends so it doesn't stall)
+            for i in range(10, 0, -1): 
+                if current_state != "IDLE": break
+                for led in leds: led.value(0)
+                leds[i].value(1)
+                time.sleep(0.08)
