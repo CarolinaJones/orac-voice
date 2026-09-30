@@ -93,8 +93,10 @@ SSML_PITCH = "x-high"      							# x-low, low, medium, high, x-high, or "+10%" 
 SSML_VOLUME = "loud"       							# silent, x-soft, soft, medium, loud, x-loud
 SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to omit the tag (a Personal Voice ignores this too)
 
-voice_pitch = 72 									# Only works on SYNTH voices and not SIRI/Personal voices
+VOICE_PITCH = 72 									# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 188										# Only works on SYNTH Speech Rate
+
+RELAY_SOUND = True									# When 'True', adds a relay click sound to the processing hum								
 
 # T R A N S C R I P T  &  R A G  S E T T I N G S #
 
@@ -161,13 +163,17 @@ MOUSE_EVENT = re.compile(r'\x1b\[<\d+;\d+;\d+[Mm]')
 
 # S O U N D S #
 
-SOUND_PROCESSING = os.path.join(BASE_DIR, "resources/sounds/orac-hum_48k.wav")
 SOUND_COMPUTE_START = os.path.join(BASE_DIR, "resources/sounds/orac-startup_48k.wav")
 SOUND_COMPUTE_END = os.path.join(BASE_DIR, "resources/sounds/orac-shutdown_48k.wav")
 SOUND_SHUTDOWN = os.path.join(BASE_DIR, "resources/sounds/orac-shutdown_48k.wav")
 SOUND_READY = os.path.join(BASE_DIR, "resources/sounds/sub_48k.wav")
 SOUND_QUIT = os.path.join(BASE_DIR, "resources/sounds/funk_48k.wav")
 SOUND_BRACELET = os.path.join(BASE_DIR, "resources/sounds/bracelet_48k.wav")
+
+if RELAY_SOUND:
+    SOUND_PROCESSING = os.path.join(BASE_DIR, "resources/sounds/orac-hum-click_48k.wav")
+else:
+    SOUND_PROCESSING = os.path.join(BASE_DIR, "resources/sounds/orac-hum_48k.wav")
 
 # S T A L L  L I N E S #
 
@@ -1185,7 +1191,7 @@ class MacTTS:
                     for v in NSSpeechSynthesizer.availableVoices():
                         if VOICE.lower() in v.lower():
                             self.synth.setVoice_(v)
-                            self.synth.setObject_forProperty_(float(voice_pitch), "NSSpeechPitchBaseProperty")
+                            self.synth.setObject_forProperty_(float(VOICE_PITCH), "NSSpeechPitchBaseProperty")
                             break
                                 
         item_pending = False

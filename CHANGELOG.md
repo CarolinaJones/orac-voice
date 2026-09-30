@@ -7,6 +7,9 @@ and never pushed, so they are included under 1.9.3.
 
 ## v1.9.4.3 (2026-09-30)
 
+Added an option to hear a relay click sound with the ‘hum’, while ORAC is talking. New variable: **`RELAY_SOUND =`**
+Added `orac-hum-click_48k.wav` to resources/sound.
+
 Fix to the Timer function: Let a reply in progress finish (and wait out a removed key) rather than talking over it.
 
 Issue with archiving noted in relation to time of day: Resolved.
