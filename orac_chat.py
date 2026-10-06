@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #==================================================================================================#
 #                                       O R A C - V O I C E                                        #
-#                               v1.9.4.3  ·  Lore friendly VoiceChat                               #
+#                               v1.9.4.4  ·  Lore friendly VoiceChat                               #
 #                   AVSpeechUtterance / SSML voice  ·  gemma4:12b (GGUF or MLX)                    #
 #                                 Copyright © 2026 Caroline Mayne                                  #
 #                                https://github.com/CarolinaJones/                                 #
@@ -79,7 +79,7 @@ USE_LCD = False                                     # Enable Forenove 1602 I2C L
 LCD_PORT = "/dev/cu.usbmodem3101"                   # Serial port for Pico
 LCD_BAUD = 115200                                   # Pico serial baud rate
 
-USE_ACTIVATOR = False                                # Enable the Physical Hardware Lock Key on Pico GPIO 15
+USE_ACTIVATOR = False                               # Enable the Physical Hardware Lock Key on Pico GPIO 15
 
 NIC = "en1"											# Physical Network Interface for enable/disable networking
 
@@ -96,7 +96,7 @@ SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to o
 VOICE_PITCH = 72 									# Only works on SYNTH voices and not SIRI/Personal voices
 S_RATE = 188										# Only works on SYNTH Speech Rate
 
-RELAY_SOUND = True									# When 'True', adds a relay click sound to the processing hum								
+RELAY_SOUND = True									# When 'True', adds a relay click sound to the processing hum
 
 # T R A N S C R I P T  &  R A G  S E T T I N G S #
 
@@ -1913,7 +1913,12 @@ def handle_activator_change(is_in):
             time.sleep(0.5)
             if state.activator_gen != gen: return
             
-            if state.tts_engine:               
+            if state.tts_engine:
+                if USE_LCD and serial_port:
+                    with lcd_lock:
+                        if state.activator_gen == gen:
+                            try: serial_port.write(b"S:SPK\n")
+                            except Exception: pass
                 state.tts_engine.say(random.choice([
                     "I am active. State your requirement.",
                     "State your program requirements. I do not have time for tedious interactions.", 
@@ -3108,7 +3113,7 @@ def run_local_bot():
                         with state.terminal_lock:
                             sys.stdout.write(f"● {R}CALIBRATING AMBIENT NOISE...{RESET}\n")
                             sys.stdout.flush()
-                    else:
+                    elif not state.is_processing.is_set():
                         set_status("● CALIBRATING AMBIENT NOISE...", R)
                     recognizer.adjust_for_ambient_noise(source, duration=1)
                     recognizer.energy_threshold += 150
@@ -3119,7 +3124,7 @@ def run_local_bot():
                             sys.stdout.write(f"● {R}NOISE FLOOR: CALIBRATED{RESET}\n")
                             sys.stdout.write(f"● {R}TOKENIZATION {tokenizer_mode}: {SYS_TOKENS_LEN}{RESET}\n\n")
                             sys.stdout.flush()
-                    else:
+                    elif not state.is_processing.is_set():
                         set_status("● NOISE FLOOR: CALIBRATED", G)
                         time.sleep(0.5)
                 else:

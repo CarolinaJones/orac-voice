@@ -4,6 +4,11 @@ Changes from `main` (v1.5.8) to `wip`, newest first. Versions 1.6.6 to 1.9.2 wer
 and never pushed, so they are included under 1.9.3.
 
 ---
+## v1.9.4.4 (2026-10-06)
+
+Previously, when using the key activator, a random opener phrase is heard, while the light rings remained in “IDLE”. Added single trigger to PICO under lock, (serial_port.write(b"S:SPK\n”)) to trigger the lights.
+
+Minor change to personality and added “records” to phonetics.
 
 ## v1.9.4.3 (2026-09-30)
 

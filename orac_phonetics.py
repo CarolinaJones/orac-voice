@@ -116,6 +116,7 @@ _raw_corrections = {
     r"\bonly\b": "own-lee",
     r"\bprivacy\b": "pry-va'see",
     r"\brather\b": "rar'ther",
+    r"\brecords\b": "wreck'kords",
     r"\broute\b": "root",
     r"\bschedule\b": "shed-yool",
     r"\bstate\b": "stay't",
