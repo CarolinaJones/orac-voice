@@ -4,3 +4,6 @@ extras/tts_probe_*.txt
 # Created when ORAC runs
 __pycache__/
 ollama_debug.log
+memory_core/
+transcripts/
+whisper/
