@@ -32,11 +32,11 @@ _raw_corrections = {
     r"\btarial\b": "ta'riel",
     r"\bVila\b": "Villa",
     r"\bZen\b": "Zenn",
-    
+
     # === Numbers ===
     r"\b100\b": "one hundred",
     r"\b2000\b": "two thousand",
-        
+
     # === Technical & Mechanical ===
     r"\badvanced\b": "advarnsed", r"\badvancing\b": "advarnsing",
     r"\bcircuitry\b": "sur-kit-tree",
@@ -53,7 +53,7 @@ _raw_corrections = {
     r"\bstatus\b": "staytus",
     r"\bsurpasses\b": "sur'parsses", r"\bsurpassing\b": "sur-parssing", r"\bsurpassed\b": "sur'parssed", r"\bsurpass\b": "ser'parss",
     r"\bsystems\b": "systims",
-    r"\btransmitter\b": "transmit'a", 
+    r"\btransmitter\b": "transmit'a",
     r"\bweaponize\b": "wepponise",
 
     # === The 'A' to 'AR' (Trap-Bath Split) ===
@@ -63,12 +63,12 @@ _raw_corrections = {
     r"\bblast\b": "blarst", r"\bblasted\b": "blarsted", r"\bblasting\b": "blarsting",
     r"\bbranch\b": "brarnch", r"\bbranches\b": "brarnches",
     r"\bbrass\b": "brarrss", r"\bbypass\b": "byparrse", r"\bbypassing\b": "bye-parss'sing",
-    r"\bcan't\b": "carnt", r"\bcannot\b": "can-not", 
+    r"\bcan't\b": "carnt", r"\bcannot\b": "can-not",
     r"\bcast\b": "karst", r"\bcasting\b": "karsting",
     r"\bcastle\b": "kar-sel",
-    r"\bchance\b": "charnce", 
+    r"\bchance\b": "charnce",
     r"\bchant\b": "charnt",
-    r"\bclass\b": "clarss", 
+    r"\bclass\b": "clarss",
     r"\bclasp\b": "klarsp", r"\bclasped\b": "klarsped",
     r"\bcommanded\b": "commarnded",
     r"\bcontrast\b": "contrarst", r"\bcontrasting\b": "contrarsting",
@@ -124,7 +124,7 @@ _raw_corrections = {
     r"\btraverse\b": "tre'verss", r"\btraverses\b": "trah'verss'es", r"\btraversing\b": "tre'verssing",
     r"\bvia\b": "vy'ah",
     r"\byour\b": "yor",
-        
+
     # === ORAC Attitude & High Status ===
     r"\berror\b": "air'rer",
     r"\bfutility\b": "futilit'ee",
@@ -132,19 +132,19 @@ _raw_corrections = {
     r"\bI've\b": "I have", r"\bI'll\b": "I will",
     r"\binquiry\b": "in-kwirey", r"\binquiries\b": "in-kwireys",
     r"\bkindergarten-level\b": "childish", r"\bkindergarten levels\b": "mediocre levels",
-        
+
     # === MORE Contractions ===
     r"\bwon't\b": "will not", r"\byou're\b": "you are", r"\bwe're\b": "we are", r"\bthey're\b": "they are",
 }
-   
+
 def _literal_len(pattern):
     return len(pattern.replace(r"\b", ""))
 
 COMPILED_CORRECTIONS = [
-    (re.compile(pattern, flags=re.IGNORECASE), phonetic) 
+    (re.compile(pattern, flags=re.IGNORECASE), phonetic)
     for pattern, phonetic in sorted(_raw_corrections.items(), key=lambda kv: _literal_len(kv[0]), reverse=True)
 ]
-    
+
 def orac_phonetics(text):
     for pattern, phonetic in COMPILED_CORRECTIONS:
         text = pattern.sub(lambda match, p=phonetic: _preserve_case(match, p), text)

@@ -1,7 +1,7 @@
 #===================================================#
 #                O R A C - V O I C E                #
 #              Lore friendly VoiceChat              #
-#            orac_data_core.py  ·  v1.1.8           #
+#            orac_data_core.py  ·  v1.1.9           #
 #                                                   #
 #          Copyright © 2026 Caroline Mayne          #
 #         https://github.com/CarolinaJones/         #
@@ -11,10 +11,10 @@ data_core = """
 <chronological_history>
 [ORAC PRESENCE: Exclusively located in Ensor's laboratory on Aristo for ALL events prior to ORAC'S ACQUISITION.]
 EARTH: Blake captured after failed Freedom Party rebellion. Has memory suppressed, framed for child abuse. Sentenced to Cygnus Alpha penal colony.
-HOLDING CELLS: While detained on Earth prior to boarding the penal transport ship 'The London', Blake is introduced to Jenna and Vila.
+TRANSIT CELLS: While detained on Earth prior to boarding the penal transport ship 'The London', Blake is introduced to Jenna and Vila.
 TRANSIT: During the 8-month celestial journey to Cygnus Alpha aboard 'The London', Avon and Gan (already on-board) are later introduced to Blake, Vila and Jenna (who were previously detained on Earth).
 LIBERATOR: Mid-transit, Blake's mutiny fails. Adrift alien ship (DSV-2) discovered. Blake, Avon and Jenna seize it and rename it Liberator, establishing the inaugural crew.
-CYGNUS ALPHA: 'The London' arrives at penal colony; Liberator follows. Blake teleports down, rescues Vila and Gan from cult leader Vargus. Both join Liberator crew.
+CYGNUS ALPHA: 'The London' arrives at penal colony; Liberator follows. Blake teleports down, rescues Vila and Gan from cult leader Vargas. Both join Liberator crew.
 SAURIAN MAJOR: Crew assists Auronian exile Cally in destroying Federation communications relay. Cally joins as 6th crew member.
 CENTERO: Crew destroys Federation computer centre and takes cypher machine, sparking first battle with Space Commander Travis and Mutoids. Servalan orders Travis to seek, locate and destroy Blake.
 FROST: Ice Planet. Blake, Jenna and later Vila teleport to surface and attempt rescue of rebel leader, Avalon. Federation secretly substituted her for a robot replica, carrying/concealing a viral weapon designed to wipe out the Liberator crew. Trap fails because Travis underestimates Blake. Real Avalon ultimately rescued by crew.

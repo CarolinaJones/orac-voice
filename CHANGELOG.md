@@ -1,9 +1,40 @@
 # Changelog
 
-Changes from `main` (v1.5.8) to `wip`, newest first. Versions 1.6.6 to 1.9.2 were developed locally
-and never pushed, so they are included under 1.9.3.
+Changes from `main` (v1.5.8) to `wip`, newest first. Versions 1.6.6 to 1.9.2 were developed locally and never pushed, so they are included under 1.9.3.
 
 ---
+## v1.9.4.7 (2026-10-12)
+
+ORAC will now attempt to start the Ollama server, on start-up and report an error to the ollama_log file, if an error occurs. When `UNLOAD_ON_EXIT=True` the cleanup_processes will stop the service, that it started.
+
+## v1.9.4.6 (2026-10-11)
+
+Re-formatted the teletype text, to align left properly, matching what is shown when scrolling through historical text. `(prefix_len = len(ORAC_NAME) + 3)`
+
+**Bug Fixes**
+- Networking commands were swallowed after a barge-in, and the power-off and reboot farewells were skipped.
+- “Clear memory” could revive a reply that was still running.
+- Timers and alarms now only trigger when said as a request, and number words like thirteen to nineteen and seventy to ninety now work.
+- A timer set while an alarm fires is now kept.
+- Only one ready sound plays after an alarm.
+- The mic now waits for the teletype to finish, and Esc stops a trailing teletype.
+- Speech now stops if you interrupt before it starts.
+- The purge now sets the busy flag before starting the hum.
+
+**Updates**
+- The default model is now the MLX one.
+- MIN_FIRST_UTTERANCE_WORDS is now 2
+- The warm-up line has new wording.
+- The unused mlx.core import was removed.
+- The “Said” logging from 1.9.4.1 is dropped.
+- DEBUG_START, is now DEBUG_MODE
+
+**Pico changes:** 
+- I2C at 100 kHz, BOOT_HOLD_MS 500, the on-board LED showing the key state at boot, and quicker LED state changes.
+
+## v1.9.4.5 (2026-10-08)
+
+Skipped - See 1.9.4.6.
 ## v1.9.4.4 (2026-10-06)
 
 Previously, when using the key activator, a random opener phrase is heard, while the light rings remained in “IDLE”. Added single trigger to PICO under lock, (serial_port.write(b"S:SPK\n”)) to trigger the lights.

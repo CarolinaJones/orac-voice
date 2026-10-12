@@ -19,7 +19,7 @@ trigger_phrases = {
         "just do it",
         "straight answer",
     ),
-    
+
     "MENIAL_TASK_PHRASES": (
         "set a course",
         "set course",
@@ -29,7 +29,7 @@ trigger_phrases = {
         "set us down",
         "engage the teleport",
     ),
-    
+
     "PAST_MEMORY": (
         "what did we talk about",
         "what were we talking about",
@@ -49,8 +49,8 @@ trigger_phrases = {
         "recap what we",
         "remind me what we",
         "remind me what i",
-    ),    
-    
+    ),
+
     "EXPLICIT_PAST": (
         "yesterday",
         "last time",
@@ -62,21 +62,21 @@ trigger_phrases = {
         "archive",
         "past record",
     ),
-    
+
     "FILLER_WORDS": (
-    	"ok",
-    	"okay",
-    	"fine",
-    	"right",
-    	"cool",
-    	"whatever",
-    	"uh",
-    	"no",
-    	"ah",
-    	"oh",
-    	"yes",
-    	"indeed",
-    	"understood",
+        "ok",
+        "okay",
+        "fine",
+        "right",
+        "cool",
+        "whatever",
+        "uh",
+        "no",
+        "ah",
+        "oh",
+        "yes",
+        "indeed",
+        "understood",
     ),
 
     # Remember to Keep this list in sync with orac_personality.py

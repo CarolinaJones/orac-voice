@@ -117,8 +117,7 @@ These are set at the top of `orac_chat.py`.
 
 ## 6. Known Limitations
 
-- **Flat first sentence**: sometimes the first sentence of a reply sounds flat while the rest sound as they should, with `gemma4:12b` as well as `gemma4:12b-mlx`. `extras/tts_probe.py` helps track it down: `--from-log` measures and replays what ORAC said, and `--live-check` tests whether the voice carries anything over from one sentence to the next.
-
+- **Nothing to note at this time!**: 
 ---
 
 *ORAC-Voice — built with equal parts Blake's 7 devotion and Apple Silicon. Enjoy! Caroline xo*

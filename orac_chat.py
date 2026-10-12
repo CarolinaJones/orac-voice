@@ -2,7 +2,6 @@ import atexit
 import contextlib
 import functools
 import json
-import mlx.core as mx
 import mlx_whisper
 import numpy as np
 import objc
@@ -41,7 +40,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #==================================================================================================#
 #                                       O R A C - V O I C E                                        #
-#                               v1.9.4.4  ·  Lore friendly VoiceChat                               #
+#                               v1.9.4.7  ·  Lore friendly VoiceChat                               #
 #                   AVSpeechUtterance / SSML voice  ·  gemma4:12b (GGUF or MLX)                    #
 #                                 Copyright © 2026 Caroline Mayne                                  #
 #                                https://github.com/CarolinaJones/                                 #
@@ -60,18 +59,18 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # G E N E R A L  S E T T I N G S #
 
-USER_NAME = "Jenna" 								# USER Name and Identity
-ORAC_NAME = "ORAC"									# ORAC's Name
+USER_NAME = "Jenna"                                 # USER Name and Identity
+ORAC_NAME = "ORAC"                                  # ORAC's Name
 
 HEADLESS_MODE = False                               # Set True to disable Terminal UI rendering (No Video Monitor)
-DEBUG_MODE = True									# Start with Debug Mode enabled
-TEXT_ONLY_MODE = False								# Enables/Disables Text only entry
+DEBUG_MODE = False                                  # Start with Debug Mode enabled
+TEXT_ONLY_MODE = False                              # Enables/Disables Text only entry
 
 TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
-U1 = 0.038											# Teletype Speed
-U2 = 0.042											# Teletype Uniformity
+U1 = 0.038                                          # Teletype Speed
+U2 = 0.042                                          # Teletype Uniformity
 
-WAFFLE_MODE = False									# Allows ORAC to talk at length about his favorite topics
+WAFFLE_MODE = False                                 # Allows ORAC to talk at length about his favorite topics
 
 # H A R D W A R E  S E T T I N G S #
 
@@ -81,37 +80,37 @@ LCD_BAUD = 115200                                   # Pico serial baud rate
 
 USE_ACTIVATOR = False                               # Enable the Physical Hardware Lock Key on Pico GPIO 15
 
-NIC = "en1"											# Physical Network Interface for enable/disable networking
+NIC = "en1"                                         # Physical Network Interface for enable/disable networking
 
 # V O I C E  S E T T I N G S #
 
-USE_PERSONAL_VOICE = True							# Use an Apple Personal Voice
-VOICE = "ORAC Personal Voice" 						# Apple Personal Voice Name or Synth Voice Name
+USE_PERSONAL_VOICE = True                           # Use an Apple Personal Voice
+VOICE = "ORAC Personal Voice"                       # Apple Personal Voice Name or Synth Voice Name
 
-SSML_RATE = 114            							# percent
-SSML_PITCH = "x-high"      							# x-low, low, medium, high, x-high, or "+10%" (a Personal Voice ignores this: tts_probe --voice-check)
-SSML_VOLUME = "loud"       							# silent, x-soft, soft, medium, loud, x-loud
-SSML_EMPHASIS = "strong"   							# reduced, moderate, strong, none - or "" to omit the tag (a Personal Voice ignores this too)
+SSML_RATE = 114                                     # percent
+SSML_PITCH = "x-high"                               # x-low, low, medium, high, x-high, or "+10%" (a Personal Voice ignores this: tts_probe --voice-check)
+SSML_VOLUME = "loud"                                # silent, x-soft, soft, medium, loud, x-loud
+SSML_EMPHASIS = "strong"                            # reduced, moderate, strong, none - or "" to omit the tag (a Personal Voice ignores this too)
 
-VOICE_PITCH = 72 									# Only works on SYNTH voices and not SIRI/Personal voices
-S_RATE = 188										# Only works on SYNTH Speech Rate
+VOICE_PITCH = 72                                    # Only works on SYNTH voices and not SIRI/Personal voices
+S_RATE = 188                                        # Only works on SYNTH Speech Rate
 
-RELAY_SOUND = True									# When 'True', adds a relay click sound to the processing hum
+RELAY_SOUND = True                                  # When 'True', adds a relay click sound to the processing hum
 
 # T R A N S C R I P T  &  R A G  S E T T I N G S #
 
-TRANSCRIPT_DIR = ''			                        # Set location. Default is within project folder
-TR = "ORAC_Transcript_CM" 							# Transcript Name Prefix (Date will be added)
+TRANSCRIPT_DIR = ''                                 # Set location. Default is within project folder
+TR = "ORAC_Transcript_CM"                           # Transcript Name Prefix (Date will be added)
 
 ARCHIVE_DIR = os.path.join(BASE_DIR, "memory_core") # Permanent Daily RAG Archives
 
 # T E R M I N A L  S E T T I N G S #
 
-TERMINAL_PROFILE = "Homebrew"						# Terminal Profile
-TERMINAL_FONT = "Monaco"							# Font Name
-TERMINAL_FONT_SIZE = 18								# Font Size
-TERMINAL_COLS = 90 if TELETYPE_MODE else 80			# Window Width
-TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
+TERMINAL_PROFILE = "Homebrew"                       # Terminal Profile
+TERMINAL_FONT = "Monaco"                            # Font Name
+TERMINAL_FONT_SIZE = 18                             # Font Size
+TERMINAL_COLS = 90 if TELETYPE_MODE else 80         # Window Width
+TERMINAL_ROWS = 25 if TELETYPE_MODE else 8          # Dynamic Window Height
 
 #==================================================================================================#
 #                                  S Y S T E M  I N T E R N A L S                                  #
@@ -120,32 +119,31 @@ TERMINAL_ROWS = 25 if TELETYPE_MODE else 8			# Dynamic Window Height
 
 # M O D E L  S E T T I N G S #
 
-#OLLAMA_MODEL = 'gemma4:12b' 						# gemma4:12b - Using while waiting for Ollama/gemma mlx bug fix
-OLLAMA_MODEL = 'gemma4:12b-mlx' 					# gemma4:12b-mlx
-#OLLAMA_MODEL = 'gemma4:31b-cloud'					# Cloud based gemma4
+OLLAMA_MODEL = 'gemma4:12b'                         # gemma4:12b - Using while waiting for Ollama/gemma mlx bug fix
+#OLLAMA_MODEL = 'gemma4:12b-mlx'                    # gemma4:12b-mlx
+#OLLAMA_MODEL = 'gemma4:31b-cloud'                  # Cloud based gemma4
 
-OLLAMA_TIMEOUT = 120								# Seconds of silence from Ollama before a request is abandoned
-OLLAMA_NUM_BATCH = 256								# One value for every chat() call, so Ollama never sees differing runner options
-OLLAMA_KEEP_ALIVE = 14400							# Seconds the model stays loaded between requests (4h)
-PRELOAD_LLM = False									# Preload model on boot. False is useful for gemma4:12b-mlx loading the model after boot, preload
-UNLOAD_ON_EXIT = True								# Free the model's memory when ORAC closes. False keeps it loaded, so a restart is ready in seconds
-
+OLLAMA_TIMEOUT = 120                                # Seconds of silence from Ollama before a request is abandoned
+OLLAMA_NUM_BATCH = 256                              # One value for every chat() call, so Ollama never sees differing runner options
+OLLAMA_KEEP_ALIVE = 14400                           # Seconds the model stays loaded between requests (4h)
+PRELOAD_LLM = False                                 # Preload model on boot. False is useful for gemma4:12b-mlx loading the model after boot, preload
+UNLOAD_ON_EXIT = True                               # Frees the model's memory on exit, and stops the Ollama server if ORAC started it. False keeps both running for a quick restart
 
 ollama_client = Client(timeout=OLLAMA_TIMEOUT)
 
 # C O N T E X T  &  H E A D E R #
 
-MODEL_MAX_TOKENS = 16384							# MAX TOKENS for STATUS Predict & NUM_CTX
-CHARS_PER_TOKEN = 4.18								# For UI Health Bar estimation fallback
-RAM_CHECK_INTERVAL = 10.0							# Check RAM usage for Header
-HEADER_UPDATE_INTERVAL = 5.0						# Update Header Interval
+MODEL_MAX_TOKENS = 16384                            # MAX TOKENS for STATUS Predict & NUM_CTX
+CHARS_PER_TOKEN = 4.18                              # For UI Health Bar estimation fallback
+RAM_CHECK_INTERVAL = 10.0                           # Check RAM usage for Header
+HEADER_UPDATE_INTERVAL = 5.0                        # Update Header Interval
 
 # T T S  D E B U G I N G #
 
-MIN_FIRST_UTTERANCE_WORDS = 2						# Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
-SENTENCES_PER_UTTERANCE = 1							# After the first: 1 = speak each sentence as soon as it's written; 2 = wait for pairs (up to 2 s of silence)
-SPEAK_AFTER_GENERATION = False						# Experiment: hold speech until the LLM has finished (tests contention while it generates)
-VOICE_WARMUP = True									# Speak one line silently at start-up, so the voice's own start-up stall happens during boot, not in the first reply
+MIN_FIRST_UTTERANCE_WORDS = 2                       # Merge a shorter opening sentence into the next one (0 = off): "Irrelevant." alone gives the voice nothing to shape
+SENTENCES_PER_UTTERANCE = 1                         # After the first: 1 = speak each sentence as soon as it's written; 2 = wait for pairs (up to 2 s of silence)
+SPEAK_AFTER_GENERATION = False                      # Experiment: hold speech until the LLM has finished (tests contention while it generates)
+VOICE_WARMUP = True                                 # Speak one line silently at start-up, so the voice's own start-up stall happens during boot, not in the first reply
 
 # P A L E T T E  &  K E Y S #
 
@@ -153,8 +151,8 @@ G, A, R, B = "\033[38;5;46m", "\033[38;5;214m", "\033[38;5;196m", "\033[1;37m"
 FL, NOFL, DIM, RESET = "\033[5m", "\033[25m", "\033[2m", "\033[0m"
 IT, NOIT = "\x1B[3m","\x1B[23m"
 
-MODE_KEYS = {'dagger': '†', 'mu': 'µ', 'delta': '∂'}      	# Option+T / Option+M / Option+D
-ESC_MODE_KEYS = {                                         	# Terminals that send Option as Esc+key
+MODE_KEYS = {'dagger': '†', 'mu': 'µ', 'delta': '∂'}        # Option+T / Option+M / Option+D
+ESC_MODE_KEYS = {                                           # Terminals that send Option as Esc+key
     '\x1bt': '†', '\x1bT': '†', '\x1bm': 'µ', '\x1bM': 'µ', '\x1bd': '∂', '\x1bD': '∂'
 }
 MOUSE_SCROLL_UP = re.compile(r'\x1b\[<64;\d+;\d+[Mm]')
@@ -193,7 +191,7 @@ if not os.path.isfile(os.path.join(WHISPER_MODEL, "config.json")):
     sys.stdout.write(f"\n{R}● CRITICAL ERROR: Whisper Speech-to-Text Model not found.{RESET}\n")
     sys.stdout.write(f"{R}{FL}●{NOFL} EXPECTED PATH:{RESET} {WHISPER_MODEL}\n\n")
     sys.stdout.flush()
-    
+
     stt_alert = NSSound.alloc().initWithContentsOfFile_byReference_(SOUND_BRACELET, True)
     if stt_alert:
         stt_alert.setVolume_(0.0)
@@ -203,7 +201,7 @@ if not os.path.isfile(os.path.join(WHISPER_MODEL, "config.json")):
         stt_alert.setVolume_(1.0)
         stt_alert.play()
         time.sleep(1)
-    
+
     while True:
         choice = input("  Continue in TEXT-ONLY mode? (Y/N): ").strip().lower()
         if choice == 'y':
@@ -294,7 +292,8 @@ TTS_TRAIL_PUNC = re.compile(r'[,;\-\s]+$')
 TTS_VERY_WELL = re.compile(r'(?i)\b(very well)[.,]*\s*')
 TTS_NAME_FIX = re.compile(rf',\s+({re.escape(USER_NAME)})[.,!]$')
 TTS_COMMA_NUM = re.compile(r'(?<![\d,.])(\d{1,3}(?:,\d{3})+)(?![\d,])')
-USER_TAG_RE = re.compile(r"\[USER(['’]S)?\]", re.IGNORECASE) 
+
+USER_TAG_RE = re.compile(r"\[USER(['’]S)?\]", re.IGNORECASE)
 
 #==================================================================================================#
 #                        D A T A  C O R E  &  P R O M P T  A S S E M B L Y                         #
@@ -313,7 +312,7 @@ def personalize_core(core: str, name: str) -> str:
         "vila": "Vila Restal",
         "gan": "Olag Gan",
     }
-    
+
     full_name = roster.get(name.lower())
     if full_name:
         escaped = re.escape(full_name)
@@ -328,7 +327,7 @@ def personalize_core(core: str, name: str) -> str:
     text = re.sub(rf"\b{re.escape(name)}['’]s\b", "[USER'S]", text, flags=re.IGNORECASE)
     text = re.sub(rf"\b{re.escape(name)}\b", "[USER]", text, flags=re.IGNORECASE)
     return text
-  
+
 personalized_data_core = personalize_core(data_core, USER_NAME)
 
 _PERSONALITY_TEXT = orac_personality.replace("{ORAC_NAME}", ORAC_NAME)
@@ -350,7 +349,7 @@ tokenizer = None
 tokenizer_mode = ""
 
 try:
-    if os.path.isdir(LOCAL_TOKENIZER_PATH) and os.path.exists(os.path.join(LOCAL_TOKENIZER_PATH, "tokenizer.json")):    
+    if os.path.isdir(LOCAL_TOKENIZER_PATH) and os.path.exists(os.path.join(LOCAL_TOKENIZER_PATH, "tokenizer.json")):
         tokenizer = Tokenizer.from_file(os.path.join(LOCAL_TOKENIZER_PATH, "tokenizer.json"))
         SYS_TOKENS_LEN = len(tokenizer.encode(SYSTEM_INSTRUCTION).ids) + 10
         tokenizer_mode = "SUCCESSFUL"
@@ -363,7 +362,7 @@ except Exception as e:
         with open(os.path.join(BASE_DIR, "ollama_debug.log"), "a") as f:
             f.write(error_log)
     except: pass
-    
+
     SYS_TOKENS_LEN = int(len(SYSTEM_INSTRUCTION) / CHARS_PER_TOKEN) + 10
     tokenizer_mode = "ESTIMATED"
 
@@ -424,7 +423,7 @@ class OracState:
         self.token_color = G
         self.noise_floor = 0.0
         self.is_speaking = threading.Event()
-        self.is_processing = threading.Event() 
+        self.is_processing = threading.Event()
         self.is_listening = threading.Event()
         self.is_shutdown = threading.Event()
         self.is_interrupted = threading.Event()
@@ -438,10 +437,10 @@ class OracState:
         self.terminal_lock = threading.Lock()
         self.ui_redraw_event = threading.Event()
         self.text_selection_mode = False
-        self.mic_muted = False      
+        self.mic_muted = False
         self.history_gen = 0
-        self.tts_last_active = 0.0 
-        self._cached_token_base = SYS_TOKENS_LEN       
+        self.tts_last_active = 0.0
+        self._cached_token_base = SYS_TOKENS_LEN
         self.alarm_trigger_epoch = None
         self.last_active = time.time()
         self.last_uv_warning = None
@@ -451,7 +450,7 @@ class OracState:
         self.term_rows = TERMINAL_ROWS
         self.debug = DEBUG_MODE
         self.debug_col = RESET if DEBUG_MODE else DIM
-        self.sounds = {}              
+        self.sounds = {}
         for name, path in {
             "s_ready": SOUND_READY,
             "s_startup": SOUND_COMPUTE_START,
@@ -464,7 +463,7 @@ class OracState:
                 self.sounds[name] = (
                     NSSound.alloc()
                     .initWithContentsOfFile_byReference_(path, True)
-                )                
+                )
 
 state = OracState()
 
@@ -498,20 +497,30 @@ def cleanup_processes():
     try:
         sys.stdout.write("\033[?1000l\033[?1006l")
         sys.stdout.write("\033[?1049l")
-        sys.stdout.write("\033[r\033[0m\033[2J\033[H\033[?25h\n") 	
+        sys.stdout.write("\033[r\033[0m\033[2J\033[H\033[?25h\n")
         sys.stdout.flush()
     except: pass
-    
+
     try:
         if 'processing_sound' in globals() and processing_sound.is_running():
             processing_sound.stop()
     except Exception: pass
 
     if UNLOAD_ON_EXIT:
-        try:
-            requests.post("http://localhost:11434/api/generate",
-                          json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=1.0)
-        except Exception: pass
+        proc = globals().get('_ollama_proc')
+        if proc and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try: os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError: pass
+            except ProcessLookupError: pass
+        else:
+            try:
+                requests.post("http://localhost:11434/api/generate",
+                              json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=1.0)
+            except Exception: pass
 
 atexit.register(cleanup_processes)
 
@@ -555,7 +564,7 @@ def save_archival_memory():
             if '?' in txt:
                 user_logs.append([txt, ts])
                 continue
-                
+
             if words and re.split(r"['’]", words[0])[0] in inquiry_words:
                 user_logs.append([txt, ts])
                 continue
@@ -606,15 +615,15 @@ def save_archival_memory():
 
 # S E T - U P  &  S T A T U S  L I N E #
 
-def setup_terminal():   
+def setup_terminal():
     if HEADLESS_MODE:
-        sys.stdout.write("\033[8;6;52t")
-        sys.stdout.write("\033[2J\033[H\033[?25l") 
+        sys.stdout.write("\033[8;6;58t")
+        sys.stdout.write("\033[2J\033[H\033[?25l")
         sys.stdout.write(f"\n{R}{FL}●{NOFL}{RESET} ORAC STATUS: \033[7m H E A D L E S S  M O D E {RESET}\n")
-        sys.stdout.write(f"\n{A} Set 'HEADLESS = False' to restore the Terminal UI.\n\n")
+        sys.stdout.write(f"\n{A} Set 'HEADLESS_MODE = False' to restore the Terminal UI.\n\n")
         sys.stdout.flush()
         return
-        
+
     apple_script = f"""
     tell application "Terminal"
         try
@@ -627,7 +636,7 @@ def setup_terminal():
         end try
     end tell
     """
-      
+
     sys.stdout.write("\033[?1049h\033[?1000h\033[?1006h\033[?25l\033[2J\033[H")
     sys.stdout.flush()
     if sys.platform != "darwin":
@@ -636,11 +645,11 @@ def setup_terminal():
         return
     try:
         subprocess.run(['osascript', '-e', apple_script], capture_output=True)
-        time.sleep(0.5) 
+        time.sleep(0.5)
     except Exception: pass
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
-    
+
     cols, rows = shutil.get_terminal_size(fallback=(state.term_cols, state.term_rows))
     state.term_cols = cols
     state.term_rows = rows
@@ -650,32 +659,32 @@ def update_token_health():
         state.current_tokens = state._cached_token_base + sum(count_tokens(msg['content']) for msg in state.history)
 
     percent = state.current_tokens / MODEL_MAX_TOKENS if MODEL_MAX_TOKENS > 0 else 0.0
-    
+
     if percent < 0.80:
         state.token_status = "NOMINAL"
-        state.token_color = G 
+        state.token_color = G
     elif percent < 0.90:
         state.token_status = "WARNING: SUB-OPTIMAL"
-        state.token_color = A 
+        state.token_color = A
     else:
         state.token_status = "CRITICAL: SLIDING"
-        state.token_color = R 
+        state.token_color = R
 
 def set_status(text, color=G):
     rows = state.term_rows
-    
+
     clean_text = ansi_escape.sub('', text)
     clean_text = clean_text.replace('●', '').replace('▶', '').replace('█', '').strip()
     state.last_status = clean_text
-    
+
     if not HEADLESS_MODE:
         with state.terminal_lock:
             sys.stdout.write("\0337")
             sys.stdout.write(f"\033[{rows-2};1H\033[2K{color}{text}{RESET}")
             sys.stdout.write("\0338")
             sys.stdout.flush()
-        
-    if 'USE_LCD' in globals() and USE_LCD: 
+
+    if 'USE_LCD' in globals() and USE_LCD:
         update_lcd_display()
 
 def idle_status():
@@ -769,7 +778,7 @@ def _write_header():
 
 def draw_ui(full_clear=False):
     update_token_health()
-    
+
     if HEADLESS_MODE:
         if USE_LCD: update_lcd_display()
         return
@@ -778,18 +787,18 @@ def draw_ui(full_clear=False):
     with state.terminal_lock:
         sys.stdout.write("\0337")
         if full_clear: sys.stdout.write("\033[2J")
-        
+
         if TELETYPE_MODE:
             sys.stdout.write(f"\033[5;{rows-4}r")
 
         _write_header()
 
         sys.stdout.write(f"\033[{rows-1};1H\033[2K{DIM}{'-'*cols}{RESET}")
-        
+
         max_visible = max(5, cols - 20)
         display_text = "…" + state.input_buffer[-(max_visible - 1):] if len(state.input_buffer) > max_visible else state.input_buffer
         sys.stdout.write(f"\033[{rows};1H\033[2K{R}●{RESET} KEYBOARD ENTRY {FL}▶{NOFL} {B}{display_text}{RESET}")
-        
+
         sys.stdout.write("\0338")
         sys.stdout.flush()
     if USE_LCD: update_lcd_display()
@@ -881,32 +890,32 @@ def _update_lcd_display():
             led_state = "OFF"
             l1 = " SYSTEM SECURED ".ljust(16)
             l2 = "   KEY REMOVED  ".ljust(16)
-            
+
             payload = f"0:{l1}\n1:{l2}\n{bl_cmd}\nS:{led_state}\n"
             if state.last_lcd_payload != payload:
                 serial_port.write(payload.encode('utf-8'))
                 state.last_lcd_payload = payload
             return
-            
+
         clean_ram = state.cached_ram.replace("%", "").strip()
         mem = round(float(clean_ram)) if clean_ram else 0
-        
+
         l1 = f"TK:{state.current_tokens} M:{mem}%".ljust(16)[:16]
-  
+
         status = state.last_status.upper()
         status = lcd_status_text(status)
         l2 = status[:16].ljust(16)
 
         bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or state.is_alarm_playing
         is_decoding = "DECODING" in status or "SAMPLING" in status
-        
+
         if bot_busy or state.input_buffer or is_decoding:
             state.last_active = time.time()
-            
+
         idle_seconds = time.time() - state.last_active
 
         bl_cmd = "backlight_on"
-        
+
         if "TRANSMITTING" in status:
             led_state = "SPK"
         elif any(x in status for x in ["PROCESSING", "OPTIMIZING", "DECODING", "SAMPLING", "ACCESSING"]):
@@ -918,24 +927,24 @@ def _update_lcd_display():
         else:
             if idle_seconds > 60:
                 led_state = "OFF"
-                bl_cmd = "backlight_off" 
+                bl_cmd = "backlight_off"
             else:
                 led_state = "IDLE"
 
         payload = f"0:{l1}\n1:{l2}\n{bl_cmd}\nS:{led_state}\n"
-        
+
         uv_warning = state.current_tokens > (MODEL_MAX_TOKENS * 0.85)
         if uv_warning != state.last_uv_warning:
-            serial_port.write(f"U:{1 if uv_warning else 0}\n".encode('utf-8')) 
+            serial_port.write(f"U:{1 if uv_warning else 0}\n".encode('utf-8'))
             state.last_uv_warning = uv_warning
-        
+
         if state.last_lcd_payload != payload:
             serial_port.write(payload.encode('utf-8'))
             state.last_lcd_payload = payload
-        
+
     except Exception:
         pass
-        
+
 def shutdown_lcd_display():
     if not USE_LCD or not serial_port: return
     with lcd_lock:
@@ -944,14 +953,14 @@ def shutdown_lcd_display():
 def _shutdown_lcd_display():
     if not USE_LCD or not serial_port: return
     try:
-        l1 = " " * 16 
+        l1 = " " * 16
         l2 = "SYSTEM HALTED"[:16].ljust(16)
 
         payload = f"0:{l1}\n1:{l2}\nbacklight_off\nS:OFF\n"
-        
+
         serial_port.write(payload.encode('utf-8'))
         state.last_lcd_payload = payload
-            
+
     except Exception:
         pass
 
@@ -972,14 +981,14 @@ def render_input_box():
 def get_wrapped_history_lines(cols):
     lines = []
     safe_width = cols - 2
-    
+
     with state.hist_lock:
         local_log_copy = list(state.full_message_log)
-        
+
     for log_item in local_log_copy:
         role = log_item[0]
         text = log_item[1]
-        
+
         clean_prefix = f"{USER_NAME} ▶ " if role == 'user' else f"{ORAC_NAME} ▶ "
         color = f"{B}{IT}" if role == 'user' else f"{R}"
         prefix_len = len(clean_prefix)
@@ -999,7 +1008,7 @@ def resume_live_view():
     if not TELETYPE_MODE: return
     state.scroll_offset = 0
     cols, rows = state.term_cols, state.term_rows
-    visible_rows = rows - 8 
+    visible_rows = rows - 8
     lines = get_wrapped_history_lines(cols)
     display_lines = lines[-visible_rows:] if len(lines) > visible_rows else lines
 
@@ -1017,7 +1026,7 @@ def redraw_scroll_region():
         return
 
     cols, rows = state.term_cols, state.term_rows
-    visible_rows = rows - 8 
+    visible_rows = rows - 8
     lines = get_wrapped_history_lines(cols)
     state.scroll_offset = min(state.scroll_offset, max(0, len(lines) - visible_rows))
 
@@ -1027,7 +1036,7 @@ def redraw_scroll_region():
     with state.terminal_lock:
         sys.stdout.write("\0337")
         for i in range(5, rows-3): sys.stdout.write(f"\033[{i};1H\033[2K")
-        for i, line in enumerate(display_lines): sys.stdout.write(f"\033[{i+5};1H{line}") 
+        for i, line in enumerate(display_lines): sys.stdout.write(f"\033[{i+5};1H{line}")
         indicator = f" {B}{FL}[ SCROLLING HISTORY: OFFSET {state.scroll_offset} ]{NOFL}{RESET} "
         sys.stdout.write(f"\033[3;{cols - 45}H{indicator}")
         sys.stdout.write("\0338")
@@ -1084,8 +1093,8 @@ processing_sound = SoundLooper(SOUND_PROCESSING)
 def play_orac_fx(name):
     sound = state.sounds.get(name)
     if not sound:
-        return None        
-    
+        return None
+
     if sound.isPlaying():
         sound.stop()
     sound.play()
@@ -1098,14 +1107,14 @@ class MacTTS:
         self.queue = queue.Queue()
         self.synth = None
         self.personal_voice = None
-            
+
         self.thread = threading.Thread(target=self._worker, daemon=True)
         self.thread.start()
-        
+
     def is_idle(self):
         return self.queue.unfinished_tasks == 0 or not self.thread.is_alive()
 
-    def _build_utterance(self, text, volume):        
+    def _build_utterance(self, text, volume):
         escaped_text = (
             text.replace("&", "&amp;")
                 .replace("<", "&lt;")
@@ -1131,10 +1140,10 @@ class MacTTS:
             scaled_rate = max(0.0, min(1.0, (float(S_RATE) / 180.0) * 0.5))
             utterance.setRate_(scaled_rate)
             utterance.setPitchMultiplier_(1.0)
-        
+
         if self.personal_voice:
             utterance.setVoice_(self.personal_voice)
-            
+
         utterance.setVolume_(volume)
         return utterance
 
@@ -1162,6 +1171,7 @@ class MacTTS:
         start_wait = time.time()
         while not self.synth.isSpeaking() and (time.time() - start_wait < 1.5):
             if state.is_interrupted.is_set():
+                self.synth.stopSpeakingAtBoundary_(0)
                 return
             time.sleep(0.1)
         while self.synth.isSpeaking():
@@ -1181,9 +1191,9 @@ class MacTTS:
                 if not self.personal_voice:
                     log_error(f"Personal Voice requested, '{VOICE}' not found.")
                     log_error("Check spelling or ensure Personal Voice is authorized on this Terminal.")
-                
+
                 if VOICE_WARMUP: self._warm_up()
-                
+
             else:
                 self.synth = NSSpeechSynthesizer.alloc().init()
                 self.synth.setRate_(S_RATE)
@@ -1193,16 +1203,16 @@ class MacTTS:
                             self.synth.setVoice_(v)
                             self.synth.setObject_forProperty_(float(VOICE_PITCH), "NSSpeechPitchBaseProperty")
                             break
-                                
+
         item_pending = False
-    
+
         while state.running:
             try:
                 with objc.autorelease_pool():
                     text = self.queue.get(timeout=0.5)
                     item_pending = True
                     if text is None: break
-        
+
                     if state.is_interrupted.is_set():
                         self.queue.task_done()
                         item_pending = False
@@ -1210,7 +1220,7 @@ class MacTTS:
 
                     state.is_speaking.set()
                     state.tts_last_active = time.time()
-                    
+
                     if USE_PERSONAL_VOICE:
                         self._speak_and_wait(self._build_utterance(text, volume=1.0))
                     else:
@@ -1219,6 +1229,7 @@ class MacTTS:
                             start_wait = time.time()
                             while not self.synth.isSpeaking() and (time.time() - start_wait < 1.5):
                                 if state.is_interrupted.is_set():
+                                    self.synth.stopSpeaking()
                                     break
                                 time.sleep(0.1)
                             while self.synth.isSpeaking():
@@ -1229,10 +1240,10 @@ class MacTTS:
 
                     time.sleep(0.1)
                     state.tts_last_active = time.time()
-                    
+
                     self.queue.task_done()
                     item_pending = False
-        
+
                     if self.queue.empty() and not state.is_processing.is_set() and not state.is_interrupted.is_set():
                         if processing_sound.is_running():
                             processing_sound.stop()
@@ -1240,7 +1251,7 @@ class MacTTS:
                             if fx:
                                 time.sleep(fx.duration())
                         state.is_speaking.clear()
-                                              
+
             except queue.Empty:
                 if not state.is_processing.is_set() and not state.is_interrupted.is_set():
                     if processing_sound.is_running():
@@ -1250,7 +1261,7 @@ class MacTTS:
                             time.sleep(fx.duration())
                     state.is_speaking.clear()
                 continue
-                
+
             except Exception as e:
                 log_error(f"TTS worker recovered from {type(e).__name__}: {e}")
                 if item_pending:
@@ -1270,7 +1281,7 @@ class MacTTS:
             self.synth.stopSpeakingAtBoundary_(0)
         else:
             self.synth.stopSpeaking()
-            
+
 def drain_queue(q):
     """ Empty a queue while keeping unfinished_tasks correct (queue.queue.clear() under the mutex does not). """
     while True:
@@ -1301,14 +1312,17 @@ class TeletypeUI:
         self.thread = threading.Thread(target=self._worker, daemon=True)
         self.thread.start()
 
+    def is_idle(self):
+        return self.q.unfinished_tasks == 0 or not self.thread.is_alive()
+
     def _worker(self):
-        current_col = len(ORAC_NAME) + 3 
+        current_col = len(ORAC_NAME) + 3
         word_buffer = ""
 
         while state.running:
             try:
                 char = self.q.get(timeout=0.1)
-                
+
                 if HEADLESS_MODE:
                     if char == "<START>": self.is_typing.set()
                     elif char == "<END>": self.is_typing.clear()
@@ -1331,8 +1345,10 @@ class TeletypeUI:
                 if char == "<END>":
                     if word_buffer:
                         if current_col + len(word_buffer) >= (state.term_cols - 2):
-                            with state.terminal_lock: sys.stdout.write('\r\n')
-                            current_col = 0
+                            prefix_len = len(ORAC_NAME) + 3
+                            with state.terminal_lock: sys.stdout.write('\r\n' + ' ' * prefix_len)
+                            current_col = prefix_len
+
                         for w_char in word_buffer:
                             with state.terminal_lock:
                                 sys.stdout.write(f"{A}{w_char}{FL}█{NOFL}{RESET}")
@@ -1349,8 +1365,10 @@ class TeletypeUI:
 
                 if char in [' ', '\n', '\r', '\t']:
                     if current_col + len(word_buffer) >= (state.term_cols - 2):
-                        with state.terminal_lock: sys.stdout.write('\r\n')
-                        current_col = 0
+                        with state.terminal_lock:
+                            prefix_len = len(ORAC_NAME) + 3
+                            sys.stdout.write('\r\n' + ' ' * prefix_len)
+                        current_col = prefix_len
 
                     for w_char in word_buffer:
                         if state.is_interrupted.is_set(): break
@@ -1366,8 +1384,9 @@ class TeletypeUI:
                         current_col += 1
 
                     if char == '\n':
-                        with state.terminal_lock: sys.stdout.write('\n')
-                        current_col = 0
+                        prefix_len = len(ORAC_NAME) + 3
+                        with state.terminal_lock: sys.stdout.write('\n' + ' ' * prefix_len)
+                        current_col = prefix_len
                     else:
                         with state.terminal_lock: sys.stdout.write(' ')
                         current_col += 1
@@ -1452,7 +1471,7 @@ def sanitize_for_tts(text):
     text = TTS_POSSESSIVE_S.sub(r"\1's", text)
     try: text = orac_phonetics(text)
     except: pass
-    
+
     months = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
     def format_date(m):
         y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
@@ -1466,9 +1485,9 @@ def sanitize_for_tts(text):
     text = re.sub(r'(?<!\d)(19|20)(\d{2})(?!\d)', r'\1 \2', text)
     text = TTS_NUM_SPACER.sub(lambda m: ' '.join(m.group(1)), text)
     text = TTS_ELLIPSIS.sub(', ', text)
-    text = TTS_ARROGANT_ADVERBS.sub(r'\1, ', text)       
+    text = TTS_ARROGANT_ADVERBS.sub(r'\1, ', text)
     text = TTS_VERY_WELL.sub(r'\1! ', text)
-    text = TTS_DELIBERATE_PRONOUNS.sub(r'\1, ', text)   
+    text = TTS_DELIBERATE_PRONOUNS.sub(r'\1, ', text)
     text = TTS_MARKDOWN.sub(' ', text)
     text = TTS_BRACKETS.sub(', ', text)
     text = text.replace('“', '').replace('”', '').replace('"', '')
@@ -1477,50 +1496,55 @@ def sanitize_for_tts(text):
     text = TTS_MULTI_SPACE.sub(' ', text)
     text = TTS_SPACE_COMMA.sub(', ', text)
     text = TTS_LEAD_WEIRD.sub('', text)
-    text = TTS_TRAIL_PUNC.sub('', text)   
-    text = TTS_NAME_FIX.sub(r' \1.', text)   
+    text = TTS_TRAIL_PUNC.sub('', text)
+    text = TTS_NAME_FIX.sub(r' \1.', text)
     return text.strip()
 
 def is_hallucination(text, no_speech=1.0):
     """ Short phrases Whisper invents from noise. A "thank you" is only dropped when Whisper wasn't sure it heard
         speech: a real "Thank you, ORAC." logs a no-speech probability of 0.00. """
-    if len(text) >= 30: return False
     if HALLUCINATION_REGEX.search(text): return True
+    if len(text) >= 30: return False
     return THANK_YOU_REGEX.search(text) is not None and no_speech >= WHISPER_UNSURE
 
 # T I M E R S  &  A L A R M S #
 
+_TIME_WORDS = {w: n for n, w in enumerate(_ONES)} | {w: n * 10 for n, w in enumerate(_TENS) if w} | {"a": 1, "an": 1}
+_TIME_ASK = r'(?:(?:can|could|would|will) you )?'
+CANCEL_TIME_RE = re.compile(_TIME_ASK + r'cancel(?: \w+){0,3}? (?:alarm|timer)s?\b')
+TIMER_RE = re.compile(_TIME_ASK + r'(?:(?:set|start)(?: up)? )?(?:an? |my )?timer for (half an|\d+|[a-z]+(?: [a-z]+)?) ?(sec|min|hour)')
+ALARM_RE = re.compile(_TIME_ASK + r'(?:set )?(?:an? |my )?alarm for (\d{1,2})(?: (\d{2}))?(?: ?([ap]) ?m\b)?')
+
 def parse_time_command(text):
-    clean_text = text.lower()
-    if re.search(r'\bcancel\b(?:\s+\w+){0,3}?\s+(?:alarm|timer)s?\b', clean_text):
+    """ Timers and alarms count only when the request opens what was said (give or take "ORAC", "please", "now"),
+        so "How do I set a timer for five minutes?" stays a question. Matched against _command_core(), which turns
+        "ORAC, set an alarm for 7:30 a.m." into "set an alarm for 7 30 a m". """
+    core = _command_core(text)
+    if CANCEL_TIME_RE.match(core):
         return -1, None
-    word_to_num = {
-        "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-        "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30,
-        "forty": 40, "fifty": 50, "sixty": 60
-    }
-    
-    t_match = re.search(r'(?:set\s+(?:a|an)\s+)?timer for (a|an|half an|\d+|[a-z]+(?:[- ][a-z]+)?)\s*(sec|min|hour)', clean_text)
+
+    t_match = TIMER_RE.match(core)
     if t_match:
-        val_str = t_match.group(1)
-        unit = t_match.group(2)
-    
+        val_str, unit = t_match.groups()
+
         if val_str == "half an":
             val = 0.5
         elif val_str.isdigit():
             val = int(val_str)
         else:
-            val = sum(word_to_num.get(w, 0) for w in re.split(r'[- ]', val_str))
-    
+            val = sum(_TIME_WORDS.get(w, 0) for w in val_str.split())
+
         if val > 0:
+            if val == 0.5 and unit == 'hour':
+                val, unit = 30, 'min'
+
             mult = 1
             if 'min' in unit: mult = 60
             elif 'hour' in unit: mult = 3600
             unit_word = {"sec": "second", "min": "minute", "hour": "hour"}[unit]
             return time.time() + (val * mult), f"{val} {unit_word}{'' if val == 1 else 's'}"
-            
-    a_match = re.search(r'(?:set\s+(?:a|an)\s+)?alarm for (\d{1,2})(?:[:.](\d{2}))?\s*(?:([ap])\.?\s?m\b\.?)?', clean_text)
+
+    a_match = ALARM_RE.match(core)
     if a_match:
         hr = int(a_match.group(1))
         mins = int(a_match.group(2)) if a_match.group(2) else 0
@@ -1552,12 +1576,12 @@ def ui_refresh_worker():
         current_time = time.time()
 
         if current_time - last_ram_check >= RAM_CHECK_INTERVAL:
-            try: 
+            try:
                 state.cached_ram = f" {psutil.virtual_memory().percent}%"
-            except Exception: 
+            except Exception:
                 pass
             last_ram_check = current_time
-            
+
         if HEADLESS_MODE:
             time.sleep(1.0)
             continue
@@ -1566,14 +1590,14 @@ def ui_refresh_worker():
 
         if redraw_triggered:
             state.ui_redraw_event.clear()
-            
+
             draw_ui(full_clear=True)
             if TELETYPE_MODE:
-                if state.scroll_offset > 0: 
+                if state.scroll_offset > 0:
                     redraw_scroll_region()
-                else: 
-                    resume_live_view()   
-            render_input_box()       
+                else:
+                    resume_live_view()
+            render_input_box()
 
             if TELETYPE_MODE:
                 lines = get_wrapped_history_lines(state.term_cols)
@@ -1583,7 +1607,7 @@ def ui_refresh_worker():
                     sys.stdout.flush()
 
             last_header_update = time.time()
-            
+
         else:
             if time.time() - last_header_update >= HEADER_UPDATE_INTERVAL:
                 update_header_only()
@@ -1624,24 +1648,27 @@ def alarm_worker(trigger_epoch, tts):
             state.is_interrupted.clear()
             state.is_alarm_playing = True
             if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
-            
+
             set_status("● TEMPORAL MARKER REACHED", R)
             play_orac_fx("s_bracelet")
-            time.sleep(0.7)          
+            time.sleep(0.7)
             play_orac_fx("s_startup")
             processing_sound.start(delay=0.3)
             alarm_owns_busy = not state.is_processing.is_set()
             state.is_processing.set()
             time.sleep(0.7)
             tts.say("Alert. The designated temporal marker has been reached.")
-            
+
             wait_for_tts_idle(tts)
-                
-            time.sleep(0.5)            
+
+            time.sleep(0.5)
             if alarm_owns_busy: state.is_processing.clear()
-            
-            state.alarm_trigger_epoch = None
-            time.sleep(2)
+
+            if state.alarm_trigger_epoch == trigger_epoch: state.alarm_trigger_epoch = None
+            settle = time.time() + 10
+            while state.is_speaking.is_set() and time.time() < settle:
+                time.sleep(0.1)
+            time.sleep(0.7)
             state.is_alarm_playing = False
             play_orac_fx("s_ready")
             break
@@ -1655,11 +1682,15 @@ def speak_now(teletype):
     while state.running:
         mic_m = state.mic_muted
         text_m = state.text_selection_mode
-        
+
         if mic_m or text_m or (USE_ACTIVATOR and not state.key_inserted):
             if not state.is_speaking.is_set() and not state.is_processing.is_set() and not teletype.is_typing.is_set() and not state.is_shutdown.is_set():
-                set_status(*idle_status())
-                was_listening = False
+                new_status, _ = idle_status()
+                clean_new_status = ansi_escape.sub('', new_status).replace('●', '').replace('▶', '').replace('█', '').strip()
+
+                if not was_listening or state.last_status != clean_new_status:
+                    set_status(*idle_status())
+                    was_listening = False
             time.sleep(0.5)
             continue
 
@@ -1670,7 +1701,41 @@ def speak_now(teletype):
                 was_listening, was_ready = True, ready
             time.sleep(0.1)
         else:
-            was_listening = False 
+            was_listening = False
+
+_ollama_proc = None
+
+def _ollama_up():
+    """ True when an Ollama server answers on its API port. """
+    try:
+        return requests.get("http://localhost:11434/api/version", timeout=0.5).ok
+    except requests.RequestException:
+        return False
+
+def open_ollama():
+    """ Starts 'ollama serve' in the background unless a server already answers, then waits (up to 15 s) until it
+        does. A server ORAC starts is remembered, so cleanup_processes can stop it again on exit. """
+    global _ollama_proc
+    if _ollama_up():
+        debug_log("Ollama: already running")
+        return
+
+    binary = shutil.which("ollama") or "/Applications/Ollama.app/Contents/Resources/ollama"
+    try:
+        _ollama_proc = subprocess.Popen([binary, "serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as e:
+        log_error(f"open_ollama: could not start {binary}: {e}")
+        return
+
+    started = time.time()
+    while time.time() - started < 15 and _ollama_proc.poll() is None:
+        if _ollama_up():
+            debug_log(f"Ollama: started in {time.time() - started:.1f}s")
+            return
+        time.sleep(0.25)
+    code = _ollama_proc.poll()
+    log_error("open_ollama: 'ollama serve' " + ("is not answering after 15 s" if code is None else f"exited with code {code}"))
 
 #==================================================================================================#
 #                                C O N T E X T  C O M P A C T I O N                                #
@@ -1701,14 +1766,14 @@ def generate_compaction_summary(pruned_msgs):
     """ Executes a non-streaming rolling summary of pruned conversational assets. """
     if not pruned_msgs:
         return ""
-    
+
     formatted_dialogue = []
     previous_summary = ""
-    
+
     for msg in pruned_msgs:
         content = msg.get('content', '')
         role_label = USER_NAME if msg['role'] == 'user' else ORAC_NAME
-        
+
         if "[SYSTEM NOTE:" in content and "Historical summary:" in content:
             match = re.search(r'Historical summary:\s*(.*?)(?:\]|$)', content, flags=re.DOTALL)
             if match:
@@ -1718,16 +1783,16 @@ def generate_compaction_summary(pruned_msgs):
         clean_content = re.sub(r'\[(SYSTEM NOTE|OVERRIDE|SUBJECT|PERSPECTIVE):.*?\]', '', content, flags=re.DOTALL).strip()
         if clean_content:
             formatted_dialogue.append(f"{role_label}: {clean_content}")
-        
+
     if not formatted_dialogue and not previous_summary:
         return ""
-        
+
     dialogue_text = "\n".join(formatted_dialogue)
-    
+
     context_prefix = ""
     if previous_summary:
         context_prefix = f"PRIOR COMPACTED TELEMETRY:\n{previous_summary}\n\n"
-    
+
     summary_prompt = (
         f"You are the internal telemetry compression routine of the super-computer ORAC.\n"
         f"Analyze the preceding dialogue between the biological entity [USER] and {ORAC_NAME}.\n"
@@ -1738,7 +1803,7 @@ def generate_compaction_summary(pruned_msgs):
         f"NEW TELEMETRY TO COMPRESS:\n{dialogue_text}\n\n"
         f"COMPACTED SUMMARY:"
     )
-    
+
     try:
         response = ollama_client.chat(
             model=OLLAMA_MODEL,
@@ -1766,26 +1831,30 @@ def generate_compaction_summary(pruned_msgs):
 
 def process_system_command(user_text, tts, teletype):
     """ Checks if the user issued a core hardware/system command. Returns True if handled. """
+    state.stream_epoch = time.time()
+    if not USE_ACTIVATOR or state.key_inserted:
+        state.is_interrupted.clear()
+
     if is_command(user_text, ENABLE_NETWORKING_CMD):
         threading.Thread(target=process_networking_status, args=(tts, "On"), daemon=True).start()
         return True
-        
+
     if is_command(user_text, DISABLE_NETWORKING_CMD):
         threading.Thread(target=process_networking_status, args=(tts, "Off"), daemon=True).start()
         return True
-        
+
     if is_command(user_text, HARDWARE_REBOOT_CMD):
         hardware_system_reboot(tts)
         return True
-        
+
     if is_command(user_text, HARDWARE_SHUTDOWN_CMD):
         hardware_power_off(tts, delay_minutes=0)
         return True
-        
-    if is_shutdown_command(user_text):   # [F1]
+
+    if is_shutdown_command(user_text):
         shutdown_sequence(tts)
         return True
-        
+
     if is_command(user_text, PURGE_CMD):
         save_archival_memory()
         with state.hist_lock:
@@ -1793,6 +1862,7 @@ def process_system_command(user_text, tts, teletype):
             state.history_gen += 1
             state.full_message_log.clear()
             state.loaded_archives.clear()
+
         if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
 
         if TELETYPE_MODE:
@@ -1800,22 +1870,20 @@ def process_system_command(user_text, tts, teletype):
                 sys.stdout.write(f"\n●{R} LOGIC ARRAYS RESET{RESET}\n\n")
                 sys.stdout.flush()
         set_status("● MEMORY PURGED", R)
-        
-        state.is_interrupted.clear()
-        
-        processing_sound.start()
-        play_orac_fx("s_startup")
+
         purge_owns_busy = not state.is_processing.is_set()
         state.is_processing.set()
+        processing_sound.start()
+        play_orac_fx("s_startup")
         time.sleep(0.7)
         tts.say("   Very well. State your enquiry.")
-        
+
         wait_for_tts_idle(tts)
-            
+
         time.sleep(0.5)
         if purge_owns_busy: state.is_processing.clear()
         return True
-        
+
     return False
 
 def process_networking_status(tts, net_status):
@@ -1824,7 +1892,7 @@ def process_networking_status(tts, net_status):
     try:
         is_on = net_status.lower() == "on"
         network_status = "Activated" if is_on else "Deactivated"
-        
+
         set_status(f"{FL}●{NOFL} NETWORKING STATUS: {network_status}", R)
         play_orac_fx("s_startup")
 
@@ -1836,7 +1904,7 @@ def process_networking_status(tts, net_status):
 
         if state.is_interrupted.is_set():
             return
-            
+
         try:
             subprocess.run(
                 ["networksetup", "-setairportpower", NIC, net_status],
@@ -1870,21 +1938,21 @@ def handle_activator_change(is_in):
         state.is_interrupted.set()
         state.stream_epoch = 0.0
         state.is_processing.clear()
-        
+
         # Safely silence audio in the main hardware thread
         for sound_key in ["s_startup", "s_ready"]:
             if sound_key in state.sounds and state.sounds[sound_key].isPlaying():
                 state.sounds[sound_key].stop()
-                
+
         if state.tts_engine:
             drain_queue(state.tts_engine.queue)
             state.tts_engine.stop_speaking()
-            
+
         processing_sound.stop()
         play_orac_fx("s_shutdown")
         set_status(*idle_status())
         update_lcd_display()
-        
+
     else:
         # KEY INSERTED (Wake)
         if not TEXT_ONLY_MODE: state.mic_muted = False
@@ -1892,27 +1960,27 @@ def handle_activator_change(is_in):
         state.last_active = time.time()
         set_status("● ACTIVATOR INSERTED: SYSTEM READY", G)
         update_lcd_display()
-        
+
         def wake_sequence(gen):
-            state.is_processing.set() 
-            
+            state.is_processing.set()
+
             if "s_shutdown" in state.sounds and state.sounds["s_shutdown"].isPlaying():
                 state.sounds["s_shutdown"].stop()
-                
-            processing_sound.stop() 
+
+            processing_sound.stop()
             play_orac_fx("s_startup")
-            
+
             if state.activator_gen != gen:
                 return
-            
+
             def safe_hum():
                 if state.activator_gen == gen and state.is_processing.is_set():
                     processing_sound.start()
             threading.Timer(0.3, safe_hum).start()
-            
+
             time.sleep(0.5)
             if state.activator_gen != gen: return
-            
+
             if state.tts_engine:
                 if USE_LCD and serial_port:
                     with lcd_lock:
@@ -1921,7 +1989,7 @@ def handle_activator_change(is_in):
                             except Exception: pass
                 state.tts_engine.say(random.choice([
                     "I am active. State your requirement.",
-                    "State your program requirements. I do not have time for tedious interactions.", 
+                    "State your program requirements. I do not have time for tedious interactions.",
                     "State the reason for this interruption. Do try to be precise!",
                     "State your enquiry; What is it you want?",
                 ]))
@@ -1931,11 +1999,11 @@ def handle_activator_change(is_in):
             while True:
                 if time.time() > wake_deadline: break
                 if state.activator_gen != gen: return
-                
+
                 tts_eng = state.tts_engine
                 is_q_empty = tts_eng.is_idle() if tts_eng else True
                 is_talking = getattr(getattr(tts_eng, 'synth', None), 'isSpeaking', lambda: False)()
-                
+
                 if is_q_empty and not is_talking:
                     if silence_start is None:
                         silence_start = time.time()
@@ -1943,20 +2011,20 @@ def handle_activator_change(is_in):
                         break
                 else:
                     silence_start = None
-                    
+
                 time.sleep(0.1)
-                
+
             if state.activator_gen != gen: return
-                
+
             if processing_sound.is_running():
                 processing_sound.stop()
                 fx = play_orac_fx("s_compend")
                 if fx:
                     time.sleep(fx.duration())
-                    
-            state.is_speaking.clear()               
+
+            state.is_speaking.clear()
             state.is_processing.clear()
-                
+
         threading.Thread(target=wake_sequence, args=(current_gen,), daemon=True).start()
 
 def _try_reopen_serial():
@@ -2018,7 +2086,6 @@ def serial_reader_worker():
 # P O W E R  O F F  &  R E B O O T #
 
 def _run_shutdown(args):
-    """ 'sudo -n' fails immediately instead of waiting for a password nobody can type (the terminal has already been reset). """
     try:
         r = subprocess.run(["sudo", "-n", "/sbin/shutdown"] + args, timeout=30, capture_output=True)
         if r.returncode != 0:
@@ -2029,32 +2096,30 @@ def _run_shutdown(args):
 def hardware_power_off(tts, delay_minutes=0):
     state.is_shutdown.set()
     save_archival_memory()
-    
     set_status(f"{FL}●{NOFL} INITIATING TOTAL SYSTEM POWER DOWN...", R)
-
     play_orac_fx("s_startup")
     processing_sound.start(delay=0.3)
     state.is_processing.set()
     time.sleep(0.7)
-    
+
     farewell1 = "All principle circuits, deactivated."
     farewell2 = "Power to bio-plasmic matrix: Terminating."
     tts.say(farewell1)
     time.sleep(0.5)
     tts.say(farewell2)
-    
+
     wait_for_tts_idle(tts)
-    
+
     state.is_processing.clear()
     processing_sound.stop()
     time.sleep(0.1)
-    
+
     fx = play_orac_fx("s_shutdown")
     if fx:
         time.sleep(fx.duration())
     else:
         time.sleep(2.0)
-    
+
     cleanup_processes()
     state.running = False
 
@@ -2062,45 +2127,45 @@ def hardware_power_off(tts, delay_minutes=0):
         _run_shutdown(["-h", f"+{delay_minutes}"])
     else:
         _run_shutdown(["-h", "now"])
-        
+
     sys.exit(0)
 
 def hardware_system_reboot(tts):
     state.is_shutdown.set()
     save_archival_memory()
-    
+
     set_status(f"{FL}●{NOFL} INITIATING SYSTEM REBOOT...", R)
 
     play_orac_fx("s_startup")
     processing_sound.start(delay=0.3)
     state.is_processing.set()
     time.sleep(0.7)
-    
+
     farewell1 = "All principle circuits, recycling."
     farewell2 = "Reboot sequence initiated."
     tts.say(farewell1)
     time.sleep(0.5)
     tts.say(farewell2)
-    
+
     time.sleep(0.4)
     wait_for_tts_idle(tts)
 
     state.is_processing.clear()
     processing_sound.stop()
     time.sleep(0.1)
-    
+
     fx = play_orac_fx("s_shutdown")
     if fx:
         time.sleep(fx.duration())
     else:
         time.sleep(2.0)
-    
+
     cleanup_processes()
     state.running = False
 
     _run_shutdown(["-r", "now"])
     sys.exit(0)
-    
+
 # E X I T  &  T R A N S C R I P T S #
 
 def save_transcript():
@@ -2128,7 +2193,7 @@ def save_transcript():
 def shutdown_sequence(tts):
     if state.is_shutdown.is_set(): return True
     state.is_shutdown.set()
-    time.sleep(0.2) 
+    time.sleep(0.2)
     if TELETYPE_MODE and state.scroll_offset > 0: resume_live_view()
 
     rows = state.term_rows
@@ -2139,8 +2204,8 @@ def shutdown_sequence(tts):
     if len(state.full_message_log) > 0:
         if HEADLESS_MODE:
             # In HEADLESS_MODE always exit on ctrl C and save transcript
-            saved_file = save_transcript()   # [F6]
-            if saved_file: set_status("● FULL TRANSCRIPT AUTO-SAVED (HEADLESS)", G)
+            saved_file = save_transcript()
+            if saved_file: set_status("● FULL TRANSCRIPT AUTO-SAVED", G)
             else: set_status("● TRANSCRIPT SAVE FAILED (SHUTTING DOWN ANYWAY)", R)
         else:
             def render_save_prompt(typed=""):
@@ -2178,7 +2243,7 @@ def shutdown_sequence(tts):
                                 else:
                                     set_status("● TRANSCRIPT PURGED", R)
                             elif choice == 'c':
-                                cancel_shutdown = True 
+                                cancel_shutdown = True
                                 if TELETYPE_MODE:
                                     with state.terminal_lock:
                                         sys.stdout.write(f"\n{A}● SHUTDOWN ABORTED{RESET}\n")
@@ -2194,9 +2259,9 @@ def shutdown_sequence(tts):
         render_input_box()
         time.sleep(0.1)
         return False
-        
+
     save_archival_memory()
-  
+
     set_status(f"{FL}●{NOFL} SYSTEM GOING OFFLINE", R)
     set_status(f"{FL}●{NOFL} TERMINATING...", R)
     time.sleep(1)
@@ -2208,18 +2273,18 @@ def shutdown_sequence(tts):
     with state.terminal_lock:
         sys.stdout.write("\033[?1000l\033[?1006l")
         sys.stdout.write("\033[?1049l")
-        sys.stdout.write("\033[1;r")
+        sys.stdout.write("\033[r")
         sys.stdout.write("\033[2J\033[H")
         sys.stdout.write("\033[?25h")
         sys.stdout.flush()
 
     state.running = False
     sys.exit(0)
-    
+
 # B O O T  S E Q U E N C E #
 
 def startup_animation():
-    setup_terminal()   
+    setup_terminal()
     # Halt normal boot if the key is not present
     if USE_ACTIVATOR and not state.key_inserted:
         if not HEADLESS_MODE:
@@ -2229,13 +2294,13 @@ def startup_animation():
         draw_ui()
         set_status(*idle_status())
         return
-    
+
     if not HEADLESS_MODE:
         with state.terminal_lock:
             sys.stdout.write("\033[2J\033[?25l")
             sys.stdout.flush()
     draw_ui()
-    
+
     logic_text = "LOGIC ARRAYS BOOTING..."
     if TELETYPE_MODE and not HEADLESS_MODE:
         with state.terminal_lock:
@@ -2247,7 +2312,7 @@ def startup_animation():
                 sys.stdout.flush()
             time.sleep(0.03)
 
-        time.sleep(1.2) 
+        time.sleep(1.2)
         state.full_message_log.append(('assistant', "LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         with state.terminal_lock:
             sys.stdout.write("\n\n")
@@ -2259,7 +2324,7 @@ def startup_animation():
         state.full_message_log.append(('assistant', "LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         set_status("● LOGIC ARRAYS ONLINE:  [ SYSTEMS NOMINAL ]", G)
         time.sleep(0.5)
-        
+
     if USE_ACTIVATOR and state.key_inserted:
             handle_activator_change(True)
 
@@ -2287,13 +2352,13 @@ def search_archival_memory(user_text):
                 if f"{word} days ago" in clean_text:
                     target_date = (now - timedelta(days=num)).strftime('%Y-%m-%d')
                     break
-        
+
         if not target_date:
             days_of_week = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
             for day, weekday_num in days_of_week.items():
                 if f"last {day}" in clean_text or f"previous {day}" in clean_text:
                     offset = (now.weekday() - weekday_num) % 7
-                    if offset == 0: offset = 7 
+                    if offset == 0: offset = 7
                     target_date = (now - timedelta(days=offset)).strftime('%Y-%m-%d')
                     break
 
@@ -2305,13 +2370,13 @@ def search_archival_memory(user_text):
         if os.path.exists(ARCHIVE_DIR):
             files = [f for f in os.listdir(ARCHIVE_DIR) if f.startswith("orac_archive_") and f.endswith(".json")]
             if files:
-                files.sort(reverse=True) 
+                files.sort(reverse=True)
                 filepath = os.path.join(ARCHIVE_DIR, files[0])
                 target_date = files[0].replace("orac_archive_", "").replace(".json", "")
 
     if target_date and target_date in state.loaded_archives:
         debug_line(f"[DEBUG] RAG Engine: {target_date} already in active memory. Skipping!", row_offset=5)
-        return "" 
+        return ""
 
     if TELETYPE_MODE:
         with state.terminal_lock:
@@ -2326,27 +2391,26 @@ def search_archival_memory(user_text):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 log_data = json.load(f).get('log', [])
-                
+
             if log_data:
                 formatted = []
                 for item in log_data[-15:]:
                     if not isinstance(item, (list, tuple)) or len(item) < 2: continue
                     txt, ts = item[0], item[1]
                     formatted.append(f"- [{ts}] {txt}")
-                    
+
                 archive_text = "\n".join(formatted)
-                
-                # Track the loaded file so it is not loaded twice
-                state.loaded_archives.add(target_date)
-                
+
+                state.loaded_archives.add(target_date) # Track the loaded file so it is not loaded twice
+
                 return f"\n\n[OVERRIDE: You retrieved archive {target_date}. User's logged questions:\n{archive_text}\nCRITICAL: Briefly summarize these topics without complaining.]"
         except Exception as e:
             log_error(f"search_archival_memory: {type(e).__name__}: {e}")
             debug_line(f"[DEBUG] RAG Load Error: {e}", row_offset=5)
-            
+
     if target_date:
-        return f"\n\n[OVERRIDE: Archive {target_date} not found. State: 'There is no archived telemetry for that date.']"        
-    
+        return f"\n\n[OVERRIDE: Archive {target_date} not found. State: 'There is no archived telemetry for that date.']"
+
     return ""
 
 # M O D E L  P R E L O A D #
@@ -2370,7 +2434,6 @@ def preload_model():
         debug_line(f"[DEBUG] Model preload failed: {e}")
     finally:
         state.model_ready.set()
-
 
 def model_timings(response):
     """ Where Ollama spent a request's time, from its final message: loading the model, evaluating the
@@ -2418,13 +2481,13 @@ def interruptible(chunks, epoch_id=None):
         stop.set()
 
 def trigger_barge_in(tts, teletype):
-    if not state.is_processing.is_set() and not state.is_speaking.is_set() and not teletype.is_typing.is_set():
-        return 
+    if not state.is_processing.is_set() and not state.is_speaking.is_set() and not teletype.is_typing.is_set() and teletype.is_idle():
+        return
     state.is_interrupted.set()
 
     drain_queue(teletype.q)
     teletype.is_typing.clear()
-    
+
     if TELETYPE_MODE:
         if state.scroll_offset > 0: resume_live_view()
         with state.terminal_lock:
@@ -2489,9 +2552,9 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             time.sleep(0.7)
             set_status(f"● INTERNAL TIMER SECURED FOR: {alarm_str}", G)
         threading.Thread(target=alarm_worker, args=(trigger_epoch, tts), daemon=True).start()
-        
+
     # T R I G G E R  P H R A S E S #  (orac_trigger_phrases.py)
-    
+
     is_very_well = phrase_hit(clean_prompt, trigger_phrases["VERY_WELL_PHRASES"])
     is_only_filler = prompt_words.issubset(filler_words) or (len(clean_prompt) <= 3 and clean_prompt not in SHORT_QUERY_OK)
     is_menial_task = phrase_hit(clean_prompt, trigger_phrases["MENIAL_TASK_PHRASES"])
@@ -2500,7 +2563,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     is_explicit_past = (phrase_hit(clean_prompt, trigger_phrases["EXPLICIT_PAST"]) or LAST_WEEKDAY_RE.search(clean_prompt) is not None) and (
         is_memory_request or CONVERSATION_REF_RE.search(clean_prompt) is not None or ARCHIVE_REQUEST_RE.search(clean_prompt) is not None)
     is_topic_of_interest = WAFFLE_MODE and phrase_hit(clean_prompt, trigger_phrases["TOPIC_OF_INTEREST_PHRASES"])
-    
+
     with state.hist_lock:
         recent_user_messages = sum(1 for msg in state.history if msg['role'] == 'user')
 
@@ -2532,7 +2595,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
 
     if history_headroom > 0 and (history_tokens / history_headroom) > 0.60:
         adaptive_constraint = "\n\n[SYSTEM NOTE: High memory context active. Strictly adhere to your DATABANKS. Do not extrapolate.]"
-    
+
     final_prompt = translated_prompt + override_text + archive_injection + adaptive_constraint
 
     with state.hist_lock:
@@ -2554,30 +2617,30 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     if should_prune:
         # Keep ~65% of the conversation intact instead of destroying it all
         target_tokens = int(MODEL_MAX_TOKENS * 0.65)
-        
+
         with state.hist_lock:
             prune_gen = state.history_gen
             pruned_msgs, remaining_hist = dry_run_pruning(state.history, target_tokens, state._cached_token_base)
-            
+
         set_status("● OPTIMIZING MEMORY CORRIDORS...", A)
-    
+
         play_orac_fx("s_startup")
         processing_sound.start(delay=0.3)
         time.sleep(0.7)
         tts.say(random.choice(PRUNE_STALL_LINES))
-    
+
         summary = generate_compaction_summary(pruned_msgs)
-        
+
         with state.hist_lock:
             if state.history_gen == prune_gen and (epoch_id is None or state.stream_epoch == epoch_id):
                 state.history = remaining_hist
                 state.loaded_archives.clear()
             else:
                 remaining_hist = None
-            
+
             if remaining_hist is not None and summary and state.history:
                 bridge_msg = {
-                    'role': 'user', 
+                    'role': 'user',
                     'content': f"[SYSTEM NOTE: To stabilize the bio-plasmic matrix, preceding telemetry has been compressed. Historical summary: {summary}]"
                 }
                 ack_msg = {
@@ -2585,7 +2648,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                     'content': "Compressed telemetry integrated into active logic arrays."
                 }
                 state.history = [bridge_msg, ack_msg] + state.history
-                
+
             update_token_health()
             pruned = True
 
@@ -2593,7 +2656,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
         set_status("● PRUNING COMPLETED: CONTEXT WINDOW STABILIZED", A)
 
     update_header_only()
-    
+
     with state.hist_lock:
         if epoch_id is not None and state.stream_epoch != epoch_id:
             return
@@ -2620,7 +2683,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     tag_filter = UserTagFilter()
 
     t_llm_start = time.time()
-    
+
     sent_first_sentence = False
     held_speech = [] # Only used when SPEAK_AFTER_GENERATION is on
 
@@ -2639,32 +2702,32 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             think=False,
             options={
                 **LLM_RUNNER_OPTIONS,
-                'temperature': 0.90,             # Reduced from 1 to balance the new penalties
+                'temperature': 0.90,
                 'top_p': 0.90,
                 'top_k': 30,
                 'min_p': 0.05,
-                'repeat_penalty': 1.00,          # Disabled/neutralized to avoid mathematical conflicts
-                'frequency_penalty': 0.35,       # Penalizes words based on cumulative count
-                'presence_penalty': 0.40,        # Penalizes words for appearing at least once
+                'repeat_penalty': 1.00,
+                'frequency_penalty': 0.35,
+                'presence_penalty': 0.40,
                 'repeat_last_n': 150,
                 'num_predict': num_predict_override or 400,
             }
         )
-        
+
         final = None
         for chunk in interruptible(stream, epoch_id):
             if state.is_interrupted.is_set() or (epoch_id is not None and state.stream_epoch != epoch_id):
                 break
             if chunk.get('done'):
                 final = chunk
-            
+
             if first_chunk:
                 t_llm_first_token = time.time()
                 state.last_ttft_time = f"{t_llm_first_token - t_llm_start:.2f}s"
                 if USE_LCD: update_lcd_display()
-                
+
                 debug_line(f"[DEBUG] LLM Time to First Token took: {state.last_ttft_time}", row_offset=3)
-                
+
                 set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
                 if TELETYPE_MODE:
                     with state.terminal_lock:
@@ -2673,12 +2736,12 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                     teletype.q.put("<START>")
                 else:
                     teletype.is_typing.set()
-                first_chunk = False           
-            
+                first_chunk = False
+
             content = chunk['message']['content'].replace('*', '')
             content = tag_filter.feed(content)
             response_chunks.append(content)
-            
+
             for char in content:
                 if char == '\n':
                     newline_count += 1
@@ -2686,13 +2749,13 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                 elif char.strip(): newline_count = 0
                 if TELETYPE_MODE:
                     teletype.q.put(char)
-            
+
             sentence_buffer += content
 
-            
+
             while True:
                 matches = list(SPLIT_REGEX.finditer(sentence_buffer))
-                
+
                 # Send the first sentence immediately (for low latency), unless it is a very short opener, which
                 # waits for the next one. After that, send SENTENCES_PER_UTTERANCE sentences at a time: the model
                 # writes about three times faster than ORAC speaks, so single sentences keep the voice fed.
@@ -2706,15 +2769,15 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
                     # Grab everything up to the end of the last matched sentence.
                     split_point = matches[-1].end()
                     text_to_say = sentence_buffer[:split_point].strip()
-                    
+
                     if len(text_to_say) > 2:
                         speak(text_to_say)
-                            
+
                     sentence_buffer = sentence_buffer[split_point:]
                     sent_first_sentence = True
                 else:
-                    break          
-    
+                    break
+
         if first_chunk:
             debug_log(f"Reply: stopped before the first token ({time.time() - t_llm_start:.1f}s)")
         else:
@@ -2741,7 +2804,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
 
         is_stale = epoch_id is not None and state.stream_epoch != epoch_id
         if not state.is_interrupted.is_set() and not is_stale:
-            if first_chunk: 
+            if first_chunk:
                 set_status(f"{FL}●{NOFL} TRANSMITTING DATA...", G)
                 if TELETYPE_MODE:
                     with state.terminal_lock:
@@ -2772,16 +2835,16 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             teletype.is_typing.clear()
             partial_text = "".join(response_chunks).strip()
             fallback_text = partial_text + " ... [INTERRUPTED]" if partial_text else "[transmission interrupted]"
-            
+
             with state.hist_lock:
                 if state.history and state.history[-1]['role'] == 'user':
                     state.history.append({'role': 'assistant', 'content': fallback_text})
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     state.full_message_log.append(('assistant', fallback_text, timestamp))
-                
+
     except Exception as e:
         is_stale = epoch_id is not None and state.stream_epoch != epoch_id
-    
+
         if not is_stale:
             if TELETYPE_MODE:
                 with state.terminal_lock:
@@ -2790,18 +2853,18 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
             else:
                 set_status(f"● DATALINK SEVERED: {e}", R)
             state.is_interrupted.set()
-    
+
             with state.hist_lock:
                 if state.history and state.history[-1]['role'] == 'user':
                     state.history.append({'role': 'assistant', 'content': "[DATALINK SEVERED]"})
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     state.full_message_log.append(('assistant', "[DATALINK SEVERED]", timestamp))
-    
+
     finally:
         if epoch_id is None or state.stream_epoch == epoch_id:
             teletype.is_typing.clear()
             state.is_processing.clear()
-            
+
             # ONLY clear the interrupt flag if the physical key is actually inserted!
             if not USE_ACTIVATOR or state.key_inserted:
                 state.is_interrupted.clear()
@@ -2826,7 +2889,7 @@ def start_response(user_text, tts, teletype):
         with state.terminal_lock:
             sys.stdout.write(f"\r\033[2K{B}{IT}{USER_NAME}{NOIT} ▶ {user_text}{RESET}\n\n")
             sys.stdout.flush()
-            
+
     if USE_ACTIVATOR and not state.key_inserted:
         return
 
@@ -2840,9 +2903,9 @@ def exit_from_keyboard(tts, teletype):
     """ Ctrl+C: runs the normal shutdown sequence (save prompt, or auto-save when headless) here in the
         keyboard thread; pressing C at the prompt carries on. """
     state.input_buffer = ""
-    trigger_barge_in(tts, teletype)             		# Stop any reply in progress first
+    trigger_barge_in(tts, teletype)                     # Stop any reply in progress first
     try:
-        shutdown_sequence(tts)                  		# Returns False if the user pressed C
+        shutdown_sequence(tts)                          # Returns False if the user pressed C
     except SystemExit:
         watchdog = threading.Timer(5.0, _force_exit)    # Fallback, only if the main thread can't unwind in time
         watchdog.daemon = True
@@ -2908,7 +2971,7 @@ def _keyboard_listener_impl(tts, teletype):
 
                 if up_scrolls > 0 or down_scrolls > 0:
                     if TELETYPE_MODE and not state.is_processing.is_set() and not state.is_speaking.is_set():
-                        state.scroll_offset += (up_scrolls * 2) 
+                        state.scroll_offset += (up_scrolls * 2)
                         state.scroll_offset -= (down_scrolls * 2)
                         if state.scroll_offset < 0: state.scroll_offset = 0
                         redraw_scroll_region()
@@ -2932,7 +2995,7 @@ def _keyboard_listener_impl(tts, teletype):
 
                 if '\x1b' in chunk and state.scroll_offset > 0 and TELETYPE_MODE:
                     resume_live_view()
-                    
+
                 for seq, symbol in ESC_MODE_KEYS.items():
                     chunk = chunk.replace(seq, symbol)
 
@@ -2943,11 +3006,11 @@ def _keyboard_listener_impl(tts, teletype):
                         state.text_selection_mode = not state.text_selection_mode
                         with state.terminal_lock:
                             if state.text_selection_mode:
-                                sys.stdout.write("\033[?1000l\033[?1006l") 
+                                sys.stdout.write("\033[?1000l\033[?1006l")
                             else:
                                 sys.stdout.write("\033[?1000h\033[?1006h")
                             sys.stdout.flush()
-                        
+
                         if state.text_selection_mode:
                             set_status(*idle_status())
                         else:
@@ -2957,7 +3020,7 @@ def _keyboard_listener_impl(tts, teletype):
                         if TEXT_ONLY_MODE:
                             flash_status("● MICROPHONE DISABLED (TEXT-ONLY MODE)", R, 2.0)
                             continue
-                            
+
                         state.mic_muted = not state.mic_muted
                         if state.mic_muted:
                             state.is_listening.clear()
@@ -2987,7 +3050,7 @@ def _keyboard_listener_impl(tts, teletype):
                     elif char == MODE_KEYS['delta']: # DEBUG MODE #
                         state.debug = not state.debug
                         state.debug_col = RESET if state.debug else DIM
-                        status_debug = "ENABLED" if state.debug else "DISABLED"  
+                        status_debug = "ENABLED" if state.debug else "DISABLED"
 
                         if not state.debug and not TELETYPE_MODE:
                             with state.terminal_lock:
@@ -2996,10 +3059,10 @@ def _keyboard_listener_impl(tts, teletype):
                                 sys.stdout.write(f"\033[{state.term_rows-3};1H\033[2K") # Clear LLM row
                                 sys.stdout.write("\0338") # Restore cursor
                                 sys.stdout.flush()
-                                
+
                         flash_status(f"● DEBUG MODE: {status_debug}", A, 3.0)
                         update_header_only()
-                    else: 
+                    else:
                         if char.isprintable() and not state.is_shutdown.is_set():
                             state.input_buffer += char
                             render_input_box()
@@ -3053,23 +3116,23 @@ def warm_up_whisper():
 
 def run_local_bot():
     recognizer = sr.Recognizer()
-    recognizer.dynamic_energy_threshold = False 
-    recognizer.pause_threshold = 0.7 
-    recognizer.non_speaking_duration = 0.3 
-    recognizer.phrase_threshold = 0.5 
+    recognizer.dynamic_energy_threshold = False
+    recognizer.pause_threshold = 0.7
+    recognizer.non_speaking_duration = 0.3
+    recognizer.phrase_threshold = 0.5
 
     if PRELOAD_LLM:
         threading.Thread(target=preload_model, daemon=True).start()
-        
+
     if not TEXT_ONLY_MODE: threading.Thread(target=warm_up_whisper, daemon=True).start()
 
     tts = MacTTS()
     teletype = TeletypeUI()
-    
+
     state.tts_engine = tts # Gives the key access to shut ORAC up!
 
     threading.Thread(target=keyboard_listener, args=(tts, teletype), daemon=True).start()
-    
+
     if USE_ACTIVATOR and serial_port and serial_port.is_open:
         # Synchronous Handshake: Ask Pico for initial key state BEFORE booting
         try:
@@ -3094,19 +3157,19 @@ def run_local_bot():
 
         except Exception:
             pass
-            
+
         threading.Thread(target=serial_reader_worker, daemon=True).start()
-    
+
     startup_animation()
     threading.Thread(target=speak_now, args=(teletype,), daemon=True).start() # Only once the key state is known and the UI is drawn
-    threading.Thread(target=ui_refresh_worker, daemon=True).start() 
-    
+    threading.Thread(target=ui_refresh_worker, daemon=True).start()
+
     needs_prompt = True
 
-    while state.running: 
+    while state.running:
         try:
             mic_context = contextlib.nullcontext() if TEXT_ONLY_MODE else sr.Microphone(sample_rate=16000)
-            
+
             with mic_context as source:
                 if not TEXT_ONLY_MODE:
                     if TELETYPE_MODE:
@@ -3118,7 +3181,7 @@ def run_local_bot():
                     recognizer.adjust_for_ambient_noise(source, duration=1)
                     recognizer.energy_threshold += 150
                     state.noise_floor = recognizer.energy_threshold
-                    update_header_only() 
+                    update_header_only()
                     if TELETYPE_MODE:
                         with state.terminal_lock:
                             sys.stdout.write(f"● {R}NOISE FLOOR: CALIBRATED{RESET}\n")
@@ -3146,8 +3209,8 @@ def run_local_bot():
                     if USE_ACTIVATOR and not state.key_inserted:
                         time.sleep(0.5)
                         continue
-                        
-                    bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.is_idle()
+
+                    bot_busy = state.is_speaking.is_set() or state.is_processing.is_set() or teletype.is_typing.is_set() or not tts.is_idle() or not teletype.is_idle()
 
                     if not state.input_queue.empty():
                         if bot_busy:
@@ -3160,7 +3223,7 @@ def run_local_bot():
                                 time.sleep(0.05)
 
                         user_text = state.input_queue.get()
-                        
+
                         if process_system_command(user_text, tts, teletype):
                             continue
 
@@ -3170,10 +3233,10 @@ def run_local_bot():
 
                     if bot_busy:
                         if not state.is_alarm_playing:
-                            needs_prompt = True 
-                        time.sleep(0.1) 
+                            needs_prompt = True
+                        time.sleep(0.1)
                         continue
-                        
+
                     if state.mic_muted or TEXT_ONLY_MODE:
                         needs_prompt = True
                         time.sleep(0.2)
@@ -3182,15 +3245,15 @@ def run_local_bot():
                     if needs_prompt:
                         set_status("● Adapting to ambient noise...", DIM)
                         time.sleep(0.4)
-                        
+
                         recognizer.adjust_for_ambient_noise(source, duration=0.3)
                         recognizer.energy_threshold += 150
                         state.noise_floor = recognizer.energy_threshold
                         update_header_only()
-                        
+
                         if USE_ACTIVATOR and not state.key_inserted:
                             continue
-                            
+
                         play_orac_fx("s_ready")
                         needs_prompt = False
 
@@ -3207,20 +3270,18 @@ def run_local_bot():
                             continue
 
                         set_status("● SIGNAL RECEIVED: DECODING...", A)
-                        
+
                         t_start = time.time()
 
                         audio_raw = audio.get_raw_data()
                         audio_float32 = np.frombuffer(audio_raw, dtype=np.int16).astype(np.float32) / 32768.0
-                        
+
                         result = transcribe(audio_float32)
-                        
+
                         user_text = result['text'].strip()
                         heard = f"Heard {user_text!r} ({whisper_confidence(result)})"
                         no_speech = whisper_no_speech(result)
 
-                        # threading.Timer(0.4, lambda: mx.clear_cache()).start() # Seems to work better with the timer! or not?
-                        
                         t_transcribed = time.time()
                         state.last_stt_time = f"{t_transcribed - t_start:.2f}s"
                         if USE_LCD: update_lcd_display()
@@ -3229,7 +3290,7 @@ def run_local_bot():
 
                         del audio_raw
                         del audio_float32
-                        del result 
+                        del result
 
                         if len(user_text) < 2 or is_hallucination(user_text, no_speech):
                             if user_text: debug_log(f"{heard}: ignored as a likely Whisper hallucination")
@@ -3238,14 +3299,14 @@ def run_local_bot():
                         if "temporal marker has been reached" in user_text.lower(): continue
 
                         clean_text = user_text.lower().strip("'.,! ")
-                        
+
                         if process_system_command(clean_text, tts, teletype):
                             continue
 
                         if user_text:
                             start_response(user_text, tts, teletype)
 
-                    except sr.WaitTimeoutError: 
+                    except sr.WaitTimeoutError:
                         state.is_listening.clear()
                         if USE_LCD: update_lcd_display()
                         continue
@@ -3262,7 +3323,7 @@ def run_local_bot():
                         continue
 
         except KeyboardInterrupt:
-                if not shutdown_sequence(tts): continue 
+                if not shutdown_sequence(tts): continue
                 break
         except Exception as e:
             if TELETYPE_MODE:
@@ -3278,6 +3339,7 @@ def run_local_bot():
 
 if __name__ == "__main__":
     try:
+        open_ollama()
         run_local_bot()
     except KeyboardInterrupt:
         pass
