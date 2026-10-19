@@ -62,11 +62,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_NAME = "Jenna"                                 # USER Name and Identity
 ORAC_NAME = "ORAC"                                  # ORAC's Name
 
-HEADLESS_MODE = True                                # Set True to disable Terminal UI rendering (No Video Monitor)
+HEADLESS_MODE = False                               # Set True to disable Terminal UI rendering (No Video Monitor)
 DEBUG_MODE = False                                  # Start with Debug Mode enabled
 TEXT_ONLY_MODE = False                              # Enables/Disables Text only entry
 
-TELETYPE_MODE = False                               # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
 U1 = 0.038                                          # Teletype Speed
 U2 = 0.042                                          # Teletype Uniformity
 
@@ -74,11 +74,11 @@ WAFFLE_MODE = False                                 # Allows ORAC to talk at len
 
 # H A R D W A R E  S E T T I N G S #
 
-USE_LCD = True                                      # Enable Forenove 1602 I2C LCD via Pi Pico
+USE_LCD = False                                     # Enable Forenove 1602 I2C LCD via Pi Pico
 LCD_PORT = "/dev/cu.usbmodem3101"                   # Serial port for Pico
 LCD_BAUD = 115200                                   # Pico serial baud rate
 
-USE_ACTIVATOR = True                                # Enable the Physical Hardware Lock Key on Pico GPIO 15
+USE_ACTIVATOR = False                               # Enable the Physical Hardware Lock Key on Pico GPIO 15
 
 NIC = "en1"                                         # Physical Network Interface for enable/disable networking
 
