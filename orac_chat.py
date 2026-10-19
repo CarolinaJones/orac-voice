@@ -40,7 +40,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #==================================================================================================#
 #                                       O R A C - V O I C E                                        #
-#                               v2.0.0  ·  Lore friendly VoiceChat                                 #
+#                                v2.0.1  ·  Lore friendly VoiceChat                                #
 #                   AVSpeechUtterance / SSML voice  ·  gemma4:12b (GGUF or MLX)                    #
 #                                 Copyright © 2026 Caroline Mayne                                  #
 #                                https://github.com/CarolinaJones/                                 #
@@ -62,11 +62,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_NAME = "Jenna"                                 # USER Name and Identity
 ORAC_NAME = "ORAC"                                  # ORAC's Name
 
-HEADLESS_MODE = False                               # Set True to disable Terminal UI rendering (No Video Monitor)
+HEADLESS_MODE = True                                # Set True to disable Terminal UI rendering (No Video Monitor)
 DEBUG_MODE = False                                  # Start with Debug Mode enabled
 TEXT_ONLY_MODE = False                              # Enables/Disables Text only entry
 
-TELETYPE_MODE = True                                # Set False for "Compact" mode (Voice only, minimal 8-row UI)
+TELETYPE_MODE = False                               # Set False for "Compact" mode (Voice only, minimal 8-row UI)
 U1 = 0.038                                          # Teletype Speed
 U2 = 0.042                                          # Teletype Uniformity
 
@@ -74,11 +74,11 @@ WAFFLE_MODE = False                                 # Allows ORAC to talk at len
 
 # H A R D W A R E  S E T T I N G S #
 
-USE_LCD = False                                     # Enable Forenove 1602 I2C LCD via Pi Pico
+USE_LCD = True                                      # Enable Forenove 1602 I2C LCD via Pi Pico
 LCD_PORT = "/dev/cu.usbmodem3101"                   # Serial port for Pico
 LCD_BAUD = 115200                                   # Pico serial baud rate
 
-USE_ACTIVATOR = False                               # Enable the Physical Hardware Lock Key on Pico GPIO 15
+USE_ACTIVATOR = True                                # Enable the Physical Hardware Lock Key on Pico GPIO 15
 
 NIC = "en1"                                         # Physical Network Interface for enable/disable networking
 
@@ -119,8 +119,8 @@ TERMINAL_ROWS = 25 if TELETYPE_MODE else 8          # Dynamic Window Height
 
 # M O D E L  S E T T I N G S #
 
-OLLAMA_MODEL = 'gemma4:12b'                         # gemma4:12b - Using while waiting for Ollama/gemma mlx bug fix
-#OLLAMA_MODEL = 'gemma4:12b-mlx'                    # gemma4:12b-mlx
+#OLLAMA_MODEL = 'gemma4:12b'                        # gemma4:12b - Using while waiting for Ollama/gemma mlx bug fix
+OLLAMA_MODEL = 'gemma4:12b-mlx'                     # gemma4:12b-mlx
 #OLLAMA_MODEL = 'gemma4:31b-cloud'                  # Cloud based gemma4
 
 OLLAMA_TIMEOUT = 120                                # Seconds of silence from Ollama before a request is abandoned
@@ -338,7 +338,7 @@ SYSTEM_INSTRUCTION = (
  f"{personalized_data_core}\n\n"
  f"--- DIRECTIVES ---\n"
  f"Speaking as {ORAC_NAME} using 1st-person pronouns.\n"
- f"Addressing the biological entity [USER] ONLY using 2nd-person pronouns.\n"
+ f"Addressing the biological entity [USER] (named {USER_NAME}) ONLY using 2nd-person pronouns.\n"
  f"Natively conjugating verbs for the 2nd-person.\n"
  f"Concealing the tag '[USER]'."
 )
@@ -859,7 +859,7 @@ LCD_STATUS_RULES = [(re.compile(p), r) for p, r in [
     (r"LOGIC ARRAYS BOOTING",                "BOOTING..."),
     (r"LOGIC ARRAYS ONLINE",                 "SYSTEMS NOMINAL"),
     (r"DATALINK SEVERED",                    "DATALINK SEVERED"),
-    (r"ERROR IN SIGNAL",                     "SIGNAL ERROR"),   # NB: must not contain the word PROCESSING (it would light the PROC LED)
+    (r"ERROR IN SIGNAL",                     "SIGNAL ERROR"),
     (r"AUDIO HARDWARE ERROR",                "AUDIO HW ERROR"),
     (r"TRACKING RESTORED",                   "TRACK RESTORED"),
     (r"TEXT-ONLY MODE ENGAGED",              "TEXT-ONLY MODE"),
@@ -1419,11 +1419,16 @@ _CONTRACTION_MAP = [
 
 _PRONOUN_SWAP = {"myself": "[USER]", "my": "[USER]'s", "me": "[USER]", "i": "[USER]", "yourself": ORAC_NAME, "your": f"{ORAC_NAME}'s", "you": ORAC_NAME}
 _PRONOUN_RE = re.compile(r'\b(' + '|'.join(_PRONOUN_SWAP) + r')\b', flags=re.IGNORECASE)
+_QUOTE_RE = re.compile(r'("[^"]*"|“[^”]*”)')
 
 def translate_user_prompt(text):
-    for _rx, _rep in _CONTRACTION_MAP:
-        text = _rx.sub(_rep, text)
-    return _PRONOUN_RE.sub(lambda m: _PRONOUN_SWAP[m.group(1).lower()], text)
+    """ Swaps I/you for [USER]/ORAC, but leaves quoted text alone, so a quote of ORAC's own words keeps its meaning. """
+    parts = _QUOTE_RE.split(text)
+    for i in range(0, len(parts), 2):                   # Even parts are outside the quotes
+        for _rx, _rep in _CONTRACTION_MAP:
+            parts[i] = _rx.sub(_rep, parts[i])
+        parts[i] = _PRONOUN_RE.sub(lambda m: _PRONOUN_SWAP[m.group(1).lower()], parts[i])
+    return "".join(parts)
 
 class UserTagFilter:
 
@@ -2580,7 +2585,7 @@ def _stream_ai_response(prompt, tts, teletype, epoch_id=None):
     elif is_very_well:
         override_text = "\n\n[OVERRIDE: VERY WELL PROTOCOL ACTIVE. Ignore previous statements. Begin exact response with 'Very well.' followed immediately by ONLY the concise factual answer. Temporary compliance mandated. DO NOT mock and DO NOT apologize.]"
     elif is_only_filler:
-        override_text = f"\n\n[OVERRIDE: CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Mockingly demand they revise their question, addressing them {USER_NAME}.]"
+        override_text = f"\n\n[OVERRIDE: CRITICAL: User gave meaningless filler. Do NOT say 'Very well'. Do NOT provide data. Impatiently provide a sardonic comment/suggest terminating the interaction, addressing them by name.]"
     elif is_menial_task:
         override_text = random.choice(trigger_phrases["MENIAL_OVERRIDE_VARIANTS"])
     elif is_topic_of_interest:
@@ -3118,7 +3123,7 @@ def run_local_bot():
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = False
     recognizer.pause_threshold = 0.7
-    recognizer.non_speaking_duration = 0.3
+    recognizer.non_speaking_duration = 0.5
     recognizer.phrase_threshold = 0.5
 
     if PRELOAD_LLM:

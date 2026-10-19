@@ -3,6 +3,24 @@
 Changes from `main` (v1.5.8) to `wip`, newest first. Versions 1.6.6 to 1.9.2 were developed locally and never pushed, so they are included under 1.9.3.
 
 ---
+
+## v2.0.1 (2026-10-14)
+
+Various updates to personality and data_core files:
+
+- Personality refined Factual Primacy and Behavior better reflect ORAC’s personality and moving away from ALWAYS frustratingly irritated at every response from USER.
+- Restored `HOLDING CELLS:` in chronology, as TRANSIT CELLS, while accurate caused a blending of the timeline.
+- Added `Crew, except Blake and Cally suffer radiation sickness (Cephlon).` to `ARISTO:`to ensure ORAC correctly notes the radiation sickness was as a result of exposure on CEPHLON.
+- Changed TRAVIS’ entry to include Blake as the cause requiring him to have the bionic, augments and therefore reason for obsession with Blake.
+
+Update to orac_chat:
+
+- Swaps I/you for [USER]/ORAC, but leaves quoted text alone, so a quote of ORAC's own words keeps its meaning.
+
+## v2.0.0 RELEASE (2026-10-13)
+
+Merge to Main
+
 ## v1.9.4.7 (2026-10-12)
 
 ORAC will now attempt to start the Ollama server, on start-up and report an error to the ollama_log file, if an error occurs. When `UNLOAD_ON_EXIT=True` the cleanup_processes will stop the service, that it started.
@@ -12,6 +30,7 @@ ORAC will now attempt to start the Ollama server, on start-up and report an erro
 Re-formatted the teletype text, to align left properly, matching what is shown when scrolling through historical text. `(prefix_len = len(ORAC_NAME) + 3)`
 
 **Bug Fixes**
+
 - Networking commands were swallowed after a barge-in, and the power-off and reboot farewells were skipped.
 - “Clear memory” could revive a reply that was still running.
 - Timers and alarms now only trigger when said as a request, and number words like thirteen to nineteen and seventy to ninety now work.
@@ -22,6 +41,7 @@ Re-formatted the teletype text, to align left properly, matching what is shown w
 - The purge now sets the busy flag before starting the hum.
 
 **Updates**
+
 - The default model is now the MLX one.
 - MIN_FIRST_UTTERANCE_WORDS is now 2
 - The warm-up line has new wording.
@@ -29,12 +49,14 @@ Re-formatted the teletype text, to align left properly, matching what is shown w
 - The “Said” logging from 1.9.4.1 is dropped.
 - DEBUG_START, is now DEBUG_MODE
 
-**Pico changes:** 
+**Pico changes:**
+
 - I2C at 100 kHz, BOOT_HOLD_MS 500, the on-board LED showing the key state at boot, and quicker LED state changes.
 
 ## v1.9.4.5 (2026-10-08)
 
 Skipped - See 1.9.4.6.
+
 ## v1.9.4.4 (2026-10-06)
 
 Previously, when using the key activator, a random opener phrase is heard, while the light rings remained in “IDLE”. Added single trigger to PICO under lock, (serial_port.write(b"S:SPK\n”)) to trigger the lights.
@@ -60,12 +82,12 @@ Fixed: "SYSTEM LOCKED" no longer flashes up at start-up before the screen clears
 starts once the Pico has reported the activator key and the UI is drawn, and the locked message reads the
 same throughout.
 
-
 ## v1.9.4.1 (2026-09-28)
 
 Tools for tracking down the flat first sentence, and a few tweaks.
 
 ### Voice diagnostics
+
 - **What ORAC said, in `ollama_debug.log`** (debug mode): a "Said" line for each utterance, with how
   long it took and how long the voice had been quiet before it. Typed questions are logged too.
 - **`tts_probe.py --from-log`** renders each sentence ORAC said again, with the model idle, and measures
@@ -77,6 +99,7 @@ Tools for tracking down the flat first sentence, and a few tweaks.
   compared renders, which can't show that.
 
 ### Tweaks
+
 - While the model loads, the status line reads "ACCESSING TARIAL MATRIX..." (LCD: "ACCESSING...").
 - The silent start-up warm-up line is now "I find your discourse, tedious."
 - The reboot announcement is spoken in two parts.
@@ -92,6 +115,7 @@ Tools for tracking down the flat first sentence, and a few tweaks.
 A performance, reliability and tidy-up release. You don't need to change any settings.
 
 ### Speed and model loading
+
 - **Background preload at boot.** The model is loaded and the system prompt is prefilled while the
   boot sequence runs, so the first reply doesn't wait for a cold load. In testing, the first reply
   went from about 30 s to about 15 s.
@@ -125,6 +149,7 @@ A performance, reliability and tidy-up release. You don't need to change any set
   request also replaced the model's own.
 
 ### Voice
+
 - **New `MIN_FIRST_UTTERANCE_WORDS` setting** (default 4; 0 turns it off). A very short opening
   sentence such as "Irrelevant." is joined to the next sentence, so the voice has a full phrase to
   shape.
@@ -164,6 +189,7 @@ A performance, reliability and tidy-up release. You don't need to change any set
   comments now say so.
 
 ### Commands and archive
+
 - **Whole-utterance commands.** Power-off, reboot, networking and "clear history" now only run
   when the command is the whole thing you said. Filler words ("ORAC", "please", "now") are
   ignored. Before this, "what if I said activate system shutdown?" powered the Mac off.
@@ -180,6 +206,7 @@ A performance, reliability and tidy-up release. You don't need to change any set
   the latest archive.
 
 ### Reliability (race conditions)
+
 - **Barge-in during context compaction.** Interrupting while old turns were being summarised
   could lose the second answer and leave two user turns in a row. A reply that has been replaced
   now stands down, and missing replies are filled in so turns always alternate.
@@ -192,12 +219,14 @@ A performance, reliability and tidy-up release. You don't need to change any set
   clears the typing state.
 
 ### Ctrl+C
+
 - **Ctrl+C closes ORAC in every state**, including with the activator key out, while listening,
   and in headless mode. It stops any reply and runs the normal shutdown: the save prompt, or an
   automatic transcript save when headless. Pressing **C** at the prompt carries on.
 - **No warning on exit.** The "resource_tracker: … leaked semaphore" message is gone.
 
 ### Tidy-up
+
 - **Duplicate code merged:**
   - header drawing;
   - the idle status line;
@@ -206,6 +235,7 @@ A performance, reliability and tidy-up release. You don't need to change any set
   - token counting.
 
   Dead code was removed.
+
 - **`TRANSCRIPT_DIR = ''`** now means the project folder. It used to mean the folder ORAC was
   started from.
 - **New section headers.** The sections are regrouped under new letter-spaced headers
@@ -213,6 +243,7 @@ A performance, reliability and tidy-up release. You don't need to change any set
   now use spaces instead of tabs, so they line up in any editor and on GitHub.
 
 ### Documentation
+
 - **README** updated for the `AVSpeechSynthesizer` voice, the current settings and commands, and
   the model the code uses by default (`gemma4:12b`).
 - **New `ORAC-VOICE_User_Manual.md`:** every voice command, keyboard shortcut and mode.
@@ -224,6 +255,7 @@ A performance, reliability and tidy-up release. You don't need to change any set
 Local development since v1.6.5, first pushed with v1.9.4.
 
 ### Voice
+
 - **New speech engine.** Speech now uses `AVSpeechSynthesizer` instead of
   `NSSpeechSynthesizer`, with SSML control of rate, pitch, volume and emphasis (`SSML_RATE`,
   `SSML_PITCH`, `SSML_VOLUME`, `SSML_EMPHASIS`).
@@ -235,6 +267,7 @@ Local development since v1.6.5, first pushed with v1.9.4.
   chunks.
 
 ### Hardware
+
 - **Activator key** on the Pico (GPIO 15, `USE_ACTIVATOR`):
   - Removing the key locks ORAC: the mic is muted, speech stops and the shutdown sound plays.
   - Inserting it wakes ORAC.
@@ -251,6 +284,7 @@ Local development since v1.6.5, first pushed with v1.9.4.
   instead of waiting for a password.
 
 ### Commands
+
 - **"Exit interface"** now ends the session. "Shut down" and "deactivate" did before, and a stray
   "deactivate" could end it by accident.
 - **"Re set" removed** from the memory purge commands ("clear history" and "new subject" remain).
@@ -258,6 +292,7 @@ Local development since v1.6.5, first pushed with v1.9.4.
   Bare "summarise", "recap" and "remind me" turned lore questions into recaps.
 
 ### Modes
+
 - **`HEADLESS_MODE`** runs ORAC without a monitor: no terminal UI, and exiting (by voice or
   Ctrl+C) saves the transcript automatically, since the save prompt can't be seen.
 - **`TEXT_ONLY_MODE`** (typed input only) is now a user setting. ORAC still offers it at startup
@@ -265,6 +300,7 @@ Local development since v1.6.5, first pushed with v1.9.4.
 - **`WAFFLE_MODE`** lets ORAC talk at length about his favourite topics.
 
 ### Conversation and memory
+
 - **Trigger phrases in their own file.** Trigger and filler phrases moved to the new
   `orac_trigger_phrases.py`.
 - **Barge-in during prompt evaluation.** You can interrupt ORAC before the first word of a reply
@@ -277,6 +313,7 @@ Local development since v1.6.5, first pushed with v1.9.4.
 - **Error log.** Errors are logged to `ollama_debug.log`.
 
 ### Personality, lore and pronunciation
+
 - **`orac_personality.py` v1.3.0 → v1.4.4:**
   - Criticism targeting, variation rules and topics of genuine interest (v1.4.2).
   - Self-reference anchor for "I was created by Ensor" (v1.4.2).
@@ -298,6 +335,7 @@ Local development since v1.6.5, first pushed with v1.9.4.
 ## v1.6.5 (2026-09-07)
 
 ### Added
+
 - **LCD support.** A 1602 I2C LCD is driven by a Raspberry Pi Pico over USB serial (`USE_LCD`,
   `LCD_PORT`, `LCD_BAUD`):
   - Line 1 shows token and memory use.
@@ -313,6 +351,7 @@ Local development since v1.6.5, first pushed with v1.9.4.
   LCD and debug display.
 
 ### Changed
+
 - **Gentler pruning.** Pruning keeps about 65% of the context, instead of cutting back to the
   system prompt plus 1,200 tokens.
 - **Longer keep-alive.** The model stays loaded for 4 hours between requests (was 2).
